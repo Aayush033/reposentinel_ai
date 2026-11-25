@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "repo_hash": "127710827d65d235499a7f311e3b05143576c3e80f99d48a7a98b155f0f46bb7",
+  "language": "python",
+  "framework": "fastapi",
+  "package_import_root": "main",
+  "captured_functions": false,
+  "files": {
+    "main.py": {
+      "sha": "88a1fcb64da534edb07b165068f2e57c89da1c496fa4d2a460f92fd4129eafa1",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/registry/pypi/{package_name}/latest-release",
+          "handler_module": "main",
+          "handler_qualname": "get_pypi_latest_release",
+          "description": "Query https://pypi.org/pypi/{package_name}/json for the real latest published version.",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "get_pypi_latest_release",
+          "file_path": "main.py",
+          "start_line": 35,
+          "end_line": 40
+        },
+        {
+          "method": "GET",
+          "path": "/health",
+          "handler_module": "main",
+          "handler_qualname": "health",
+          "description": "Return operational health, OSV upstream URL, and cache statistics.",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "health",
+          "file_path": "main.py",
+          "start_line": 51,
+          "end_line": 72
+        },
+        {
+          "method": "POST",
+          "path": "/vulnerabilities/query-batch",
+          "handler_module": "main",
+          "handler_qualname": "query_vulnerabilities_batch",
+          "description": "Submit exact pinned dependencies to POST https://api.osv.dev/v1/querybatch.\n\n    Unresolved dependencies without an exact version are never guessed or classified as safe/vulnerable.",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "query_vulnerabilities_batch",
+          "file_path": "main.py",
+          "start_line": 80,
+          "end_line": 219
+        },
+        {
+          "method": "GET",
+          "path": "/vulnerabilities/{vulnerability_id}",
+          "handler_module": "main",
+          "handler_qualname": "get_vulnerability_details",
+          "description": "Retrieve complete vulnerability advisory data from GET https://api.osv.dev/v1/vulns/{vulnerability_id}.",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "get_vulnerability_details",
+          "file_path": "main.py",
+          "start_line": 227,
+          "end_line": 234
+        },
+        {
+          "method": "POST",
+          "path": "/vulnerabilities/query-commit",
+          "handler_module": "main",
+          "handler_qualname": "query_vulnerabilities_by_commit",
+          "description": "Perform a real OSV commit-hash vulnerability lookup via POST https://api.osv.dev/v1/query.\n\n    Accepts a full 40-character (or 64-character) hexadecimal Git commit SHA and\n    returns any OSV vulnerability records associated with that comm…",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "query_vulnerabilities_by_commit",
+          "file_path": "main.py",
+          "start_line": 242,
+          "end_line": 254
+        }
+      ],
+      "functions": []
+    }
+  },
+  "lines_scanned": 254,
+  "updated_at": 1795614519769
+}

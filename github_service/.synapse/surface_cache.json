@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "repo_hash": "82f2a3ab0d903af523964da3e373331bcb61b249be987b9d32ade8db89332679",
+  "language": "python",
+  "framework": "fastapi",
+  "package_import_root": "main",
+  "captured_functions": false,
+  "files": {
+    "main.py": {
+      "sha": "8e70a7bc519099319f04370504a8808635c60374e6363dde3b00263f4126306b",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/health",
+          "handler_module": "main",
+          "handler_qualname": "health",
+          "description": "Return operational health, token configuration status, and cache statistics.",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "health",
+          "file_path": "main.py",
+          "start_line": 73,
+          "end_line": 85
+        },
+        {
+          "method": "GET",
+          "path": "/repos/{owner}/{repo}",
+          "handler_module": "main",
+          "handler_qualname": "get_repository",
+          "description": "Retrieve live repository metadata from https://api.github.com/repos/{owner}/{repo}.",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "get_repository",
+          "file_path": "main.py",
+          "start_line": 93,
+          "end_line": 121
+        },
+        {
+          "method": "GET",
+          "path": "/repos/{owner}/{repo}/dependencies",
+          "handler_module": "main",
+          "handler_qualname": "get_repository_dependencies",
+          "description": "Fetch requirements.txt, pyproject.toml, poetry.lock, and uv.lock from GitHub and parse exact vs unresolved versions.",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "get_repository_dependencies",
+          "file_path": "main.py",
+          "start_line": 129,
+          "end_line": 230
+        },
+        {
+          "method": "GET",
+          "path": "/repos/{owner}/{repo}/issues",
+          "handler_module": "main",
+          "handler_qualname": "get_repository_issues",
+          "description": "Retrieve real GitHub issues (excluding pull requests) with state and pagination support.",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "get_repository_issues",
+          "file_path": "main.py",
+          "start_line": 238,
+          "end_line": 296
+        },
+        {
+          "method": "GET",
+          "path": "/repos/{owner}/{repo}/pulls",
+          "handler_module": "main",
+          "handler_qualname": "get_repository_pulls",
+          "description": "Retrieve real GitHub pull requests with state and pagination support.",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "get_repository_pulls",
+          "file_path": "main.py",
+          "start_line": 304,
+          "end_line": 364
+        },
+        {
+          "method": "GET",
+          "path": "/repos/{owner}/{repo}/commits",
+          "handler_module": "main",
+          "handler_qualname": "get_repository_commits",
+          "description": "Retrieve real GitHub commit history for a repository.",
+          "payload_example": null,
+          "headers_hint": [],
+          "suggested_tool_name": "get_repository_commits",
+          "file_path": "main.py",
+          "start_line": 372,
+          "end_line": 419
+        }
+      ],
+      "functions": []
+    }
+  },
+  "lines_scanned": 419,
+  "updated_at": 1795608203638
+}

@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="RepoSentinel AI — Automated repository security analysis powered by MCP and AI">
+  <title>RepoSentinel AI · Security Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     APP HEADER
+══════════════════════════════════════════════════════════ -->
+<header class="app-header">
+  <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle menu">☰</button>
+
+  <div class="app-logo">
+    <div class="app-logo-icon">🛡️</div>
+    <div class="app-logo-text">Repo<span>Sentinel</span> AI</div>
+  </div>
+
+  <div class="header-spacer"></div>
+
+  <div class="header-status" role="status" aria-label="Service status">
+    <span class="status-pill unk" id="pill-github-service">
+      <span class="pill-dot"></span>GitHub Service
+    </span>
+    <span class="status-pill unk" id="pill-osv-service">
+      <span class="pill-dot"></span>OSV Service
+    </span>
+    <span class="status-pill unk" id="pill-github-mcp">
+      <span class="pill-dot"></span>GitHub MCP
+    </span>
+    <span class="status-pill unk" id="pill-osv-mcp">
+      <span class="pill-dot"></span>OSV MCP
+    </span>
+    <span class="status-pill unk" id="pill-groq">
+      <span class="pill-dot"></span>Groq
+    </span>
+    <span class="status-pill unk" id="pill-gemini">
+      <span class="pill-dot"></span>Gemini
+    </span>
+  </div>
+</header>
+
+<!-- Mobile sidebar overlay -->
+<div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+<!-- Global loading overlay -->
+<div id="global-loading" class="loading-overlay" style="display:none;position:fixed;inset:0;z-index:300;" aria-live="polite">
+  <div class="loading-spinner lg"></div>
+  <div class="loading-overlay-text">Running scan…</div>
+</div>
+
+<!-- Alert banner container -->
+<div class="alert-container" id="alert-container" aria-live="assertive" role="alert"></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     APP SHELL
+══════════════════════════════════════════════════════════ -->
+<div class="app-shell">
+
+  <!-- ── SIDEBAR ─────────────────────────────────────────── -->
+  <nav class="sidebar" id="sidebar" aria-label="Main navigation">
+    <div class="sidebar-section-label">Navigation</div>
+    <div class="sidebar-nav">
+
+      <div class="nav-item active" id="nav-scan" data-section="scan" role="button" tabindex="0" aria-label="Repository Scan">
+        <span class="nav-icon">🔍</span>
+        <span class="nav-label">Repository Scan</span>
+      </div>
+
+      <div class="nav-item" id="nav-vulnerabilities" data-section="vulnerabilities" role="button" tabindex="0" aria-label="Vulnerabilities">
+        <span class="nav-icon">🛡️</span>
+        <span class="nav-label">Vulnerabilities</span>
+      </div>
+
+      <div class="nav-item" id="nav-github" data-section="github" role="button" tabindex="0" aria-label="GitHub Correlation">
+        <span class="nav-icon">🐙</span>
+        <span class="nav-label">GitHub Correlation</span>
+      </div>
+
+      <div class="nav-item" id="nav-commit" data-section="commit" role="button" tabindex="0" aria-label="Commit Security Lookup">
+        <span class="nav-icon">🔎</span>
+        <span class="nav-label">Commit Lookup</span>
+      </div>
+
+      <div class="nav-item" id="nav-copilot" data-section="copilot" role="button" tabindex="0" aria-label="AI Copilot">
+        <span class="nav-icon">🤖</span>
+        <span class="nav-label">AI Copilot</span>
+      </div>
+
+      <div class="nav-item" id="nav-mcp" data-section="mcp" role="button" tabindex="0" aria-label="MCP Inspector">
+        <span class="nav-icon">🔧</span>
+        <span class="nav-label">MCP Inspector</span>
+      </div>
+
+      <div class="nav-item" id="nav-trace" data-count="0" data-section="trace" role="button" tabindex="0" aria-label="Execution Trace">
+        <span class="nav-icon">📋</span>
+        <span class="nav-label">Execution Trace</span>
+      </div>
+
+      <div class="nav-item" id="nav-history" data-section="history" role="button" tabindex="0" aria-label="Scan History">
+        <span class="nav-icon">📜</span>
+        <span class="nav-label">Scan History</span>
+      </div>
+
+    </div>
+
+    <div class="sidebar-footer">
+      RepoSentinel AI &copy; 2025<br>
+      <small class="text-muted">Ctrl+K to scan</small>
+    </div>
+  </nav>
+
+  <!-- ── MAIN CONTENT ────────────────────────────────────── -->
+  <main class="main-content" id="main-content">
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Repository Scan
+    ════════════════════════════════════════════════════ -->
+    <section class="section active" id="section-scan" aria-labelledby="scan-title">
+
+      <div class="section-header">
+        <div>
+          <h1 class="section-title" id="scan-title">🔍 Repository Scan</h1>
+          <div class="section-subtitle">Scan any public GitHub repository for known vulnerabilities</div>
+        </div>
+      </div>
+
+      <!-- Repo input form -->
+      <div class="repo-input-form">
+        <h2>Analyze a Repository</h2>
+        <form id="scan-form" autocomplete="off" novalidate>
+          <div class="repo-input-row">
+            <input
+              type="text"
+              id="repo-input"
+              class="repo-input"
+              placeholder="owner/repository  (e.g. psf/requests)"
+              aria-label="GitHub repository to scan"
+              spellcheck="false"
+              required
+            >
+            <button type="submit" class="btn btn-primary" id="btn-scan">
+              🔬 Scan Repository
+            </button>
+          </div>
+          <div class="repo-input-hint">
+            Enter a GitHub repository in <code>owner/repo</code> format, or paste the full GitHub URL.
+            Press <kbd>Ctrl+K</kbd> to focus this input from anywhere.
+          </div>
+        </form>
+      </div>
+
+      <!-- Scan progress -->
+      <div class="scan-progress" id="scan-progress">
+        <div class="d-flex align-center gap-8 mb-16">
+          <div class="loading-spinner"></div>
+          <strong>Scanning repository…</strong>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar indeterminate"></div>
+        </div>
+        <div class="progress-steps">
+          <div class="progress-step" id="step-fetch">
+            <span class="progress-step-icon">○</span> Fetching dependency manifest
+          </div>
+          <div class="progress-step" id="step-osv">
+            <span class="progress-step-icon">○</span> Querying OSV vulnerability database
+          </div>
+          <div class="progress-step" id="step-gh">
+            <span class="progress-step-icon">○</span> Correlating GitHub issues & PRs
+          </div>
+        </div>
+      </div>
+
+      <!-- Scan result header (hidden until scan completes) -->
+      <div class="scan-result-header hidden" id="scan-result-header" aria-live="polite">
+        <!-- Filled by JS -->
+      </div>
+
+      <!-- Security overview stat cards -->
+      <div class="stat-grid" id="stat-grid-overview" aria-label="Security statistics">
+        <!-- Empty state before first scan -->
+        <div class="panel" style="grid-column:1/-1;padding:0;">
+          <div class="empty-state">
+            <div class="empty-state-icon">🔍</div>
+            <div class="empty-state-title">No scan results yet</div>
+            <div class="empty-state-desc">Enter a repository above and click <strong>Scan Repository</strong> to run a security analysis.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vulnerability table (scan view) -->
+      <div class="panel" id="panel-vuln-scan" style="display:none;">
+        <div class="panel-header">
+          <span class="panel-title">🛡️ Vulnerabilities Detected</span>
+        </div>
+        <div id="vuln-table-scan">
+          <!-- Filled by JS -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Vulnerabilities (full table)
+    ════════════════════════════════════════════════════ -->
+    <section class="section" id="section-vulnerabilities" aria-labelledby="vuln-title">
+
+      <div class="section-header">
+        <div>
+          <h1 class="section-title" id="vuln-title">🛡️ Vulnerabilities</h1>
+          <div class="section-subtitle">Full vulnerability report with sorting and filtering</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">All Detected Vulnerabilities</span>
+        </div>
+        <div id="vuln-table-vulns">
+          <div class="empty-state">
+            <div class="empty-state-icon">🛡️</div>
+            <div class="empty-state-title">No vulnerability data</div>
+            <div class="empty-state-desc">Scan a repository from the <strong>Repository Scan</strong> section to populate this table.</div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: GitHub Correlation
+    ════════════════════════════════════════════════════ -->
+    <section class="section" id="section-github" aria-labelledby="gh-title">
+
+      <div class="section-header">
+        <div>
+          <h1 class="section-title" id="gh-title">🐙 GitHub Correlation</h1>
+          <div class="section-subtitle">Issues and pull requests related to detected vulnerabilities</div>
+        </div>
+      </div>
+
+      <div id="github-cards">
+        <div class="empty-state">
+          <div class="empty-state-icon">🐙</div>
+          <div class="empty-state-title">No GitHub data</div>
+          <div class="empty-state-desc">GitHub issues and PRs will appear here after you run a scan.</div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Commit Security Lookup
+    ════════════════════════════════════════════════════ -->
+    <section class="section" id="section-commit" aria-labelledby="commit-title">
+
+      <div class="section-header">
+        <div>
+          <h1 class="section-title" id="commit-title">🔎 Commit Security Lookup</h1>
+          <div class="section-subtitle">Query OSV.dev by exact Git commit SHA or inspect a repository's latest commit via MCP</div>
+        </div>
+      </div>
+
+      <div class="repo-input-form">
+        <h2>Check Commit Against OSV.dev</h2>
+        <form id="commit-form" autocomplete="off" novalidate>
+          <div class="repo-input-row" style="margin-bottom:10px;">
+            <input
+              type="text"
+              id="commit-repo-input"
+              class="repo-input"
+              placeholder="GitHub owner/repository (optional if SHA provided)"
+              aria-label="GitHub repository context"
+              spellcheck="false"
+            >
+            <input
+              type="text"
+              id="commit-sha-input"
+              class="repo-input"
+              placeholder="Optional full 40/64-char Git commit SHA"
+              aria-label="Full Git commit SHA"
+              spellcheck="false"
+            >
+            <button type="submit" class="btn btn-primary" id="btn-check-commit">
+              🔎 Check Commit
+            </button>
+          </div>
+          <div class="repo-input-hint">
+            Leave the commit SHA blank to fetch the repository's real latest commit via GitHub MCP and query OSV.dev, or paste an exact 40/64-char hex commit SHA.
+          </div>
+        </form>
+      </div>
+
+      <div class="panel" id="commit-result-panel">
+        <div class="panel-header">
+          <span class="panel-title">Commit Lookup Result</span>
+        </div>
+        <div id="commit-result-container">
+          <div class="empty-state">
+            <div class="empty-state-icon">🔎</div>
+            <div class="empty-state-title">No commit checked yet</div>
+            <div class="empty-state-desc">Enter a repository or full commit SHA above and click <strong>Check Commit</strong>.</div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: AI Copilot
+    ════════════════════════════════════════════════════ -->
+    <section class="section" id="section-copilot" aria-labelledby="chat-title">
+
+      <div class="section-header">
+        <div>
+          <h1 class="section-title" id="chat-title">🤖 AI Copilot</h1>
+          <div class="section-subtitle">Ask questions about your repository's security posture</div>
+        </div>
+      </div>
+
+      <div class="chat-container" role="log" aria-label="AI Copilot chat">
+
+        <!-- Toolbar -->
+        <div class="chat-toolbar">
+          <span class="chat-context-info" id="chat-context-label">
+            💡 Tip: Run a scan first so the copilot has context about your repository.
+          </span>
+        </div>
+
+        <!-- Chat history -->
+        <div class="chat-history" id="chat-history" aria-live="polite">
+          <div class="empty-state">
+            <div class="empty-state-icon">🤖</div>
+            <div class="empty-state-title">Start a conversation</div>
+            <div class="empty-state-desc">Ask anything about your repository's dependencies, vulnerabilities, or remediation steps.</div>
+          </div>
+        </div>
+
+        <!-- Chat input -->
+        <form id="chat-form" class="chat-input-row" autocomplete="off">
+          <textarea
+            id="chat-input"
+            class="chat-input"
+            placeholder="Ask about vulnerabilities, dependencies, or remediation… (Enter to send, Shift+Enter for newline)"
+            rows="1"
+            aria-label="Chat message"
+          ></textarea>
+          <button type="submit" class="btn btn-primary" aria-label="Send message">
+            ➤ Send
+          </button>
+        </form>
+
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: MCP Inspector
+    ════════════════════════════════════════════════════ -->
+    <section class="section" id="section-mcp" aria-labelledby="mcp-title">
+
+      <div class="section-header">
+        <div>
+          <h1 class="section-title" id="mcp-title">🔧 MCP Inspector</h1>
+          <div class="section-subtitle">Model Context Protocol server and tool status</div>
+        </div>
+        <div class="ml-auto">
+          <button class="btn btn-secondary" id="btn-refresh-tools">⟳ Refresh Tools</button>
+        </div>
+      </div>
+
+      <!-- MCP server status cards -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Connected MCP Servers</span>
+        </div>
+        <div class="server-cards" id="mcp-server-cards">
+          <div class="inline-loader">
+            <div class="loading-spinner"></div>
+            Loading servers…
+          </div>
+        </div>
+      </div>
+
+      <!-- MCP tool grid -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Available Tools</span>
+        </div>
+        <div class="tool-cards" id="mcp-tool-cards">
+          <div class="inline-loader">
+            <div class="loading-spinner"></div>
+            Loading tools…
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Execution Trace
+    ════════════════════════════════════════════════════ -->
+    <section class="section" id="section-trace" aria-labelledby="trace-title">
+
+      <div class="section-header">
+        <div>
+          <h1 class="section-title" id="trace-title">📋 Execution Trace</h1>
+          <div class="section-subtitle">Step-by-step log of MCP tool calls and results</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Tool Call Timeline</span>
+        </div>
+        <div class="trace-list" id="trace-list">
+          <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            <div class="empty-state-title">No trace data yet</div>
+            <div class="empty-state-desc">Execution traces appear here after scans or copilot queries are run.</div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Scan History
+    ════════════════════════════════════════════════════ -->
+    <section class="section" id="section-history" aria-labelledby="history-title">
+
+      <div class="section-header">
+        <div>
+          <h1 class="section-title" id="history-title">📜 Scan History</h1>
+          <div class="section-subtitle">Previously scanned repositories — click any row to reload results</div>
+        </div>
+      </div>
+
+      <div class="panel" style="padding:0;overflow:hidden;">
+        <div id="history-container">
+          <div class="inline-loader" style="padding:30px 20px;">
+            <div class="loading-spinner"></div>
+            Loading history…
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main><!-- /main-content -->
+</div><!-- /app-shell -->
+
+<script src="app.js"></script>
+
+<!-- Progressive enhancement: show/hide panel after scan -->
+<script>
+  // Show vuln panel only once results are rendered
+  const panelObserver = new MutationObserver(() => {
+    const vulnTable = document.getElementById('vuln-table-scan');
+    const panel = document.getElementById('panel-vuln-scan');
+    if (!panel) return;
+    if (vulnTable?.querySelector('table, .empty-state')) {
+      panel.style.display = '';
+    }
+  });
+  const target = document.getElementById('vuln-table-scan');
+  if (target) panelObserver.observe(target, { childList: true, subtree: false });
+
+  // Update chat context label after scan
+  const origScanRepo = window.scanRepo;
+  // We update the label post-scan via MutationObserver on stat-grid
+  const statObserver = new MutationObserver(() => {
+    const label = document.getElementById('chat-context-label');
+    const repoEl = document.querySelector('.scan-repo-name');
+    if (label && repoEl) {
+      label.textContent = `🎯 Context: ${repoEl.textContent.replace('📦 ', '')}`;
+    }
+  });
+  const statGrid = document.getElementById('stat-grid-overview');
+  if (statGrid) statObserver.observe(statGrid, { childList: true });
+</script>
+
+</body>
+</html>

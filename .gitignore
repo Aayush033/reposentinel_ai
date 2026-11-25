@@ -1,0 +1,48 @@
+# Python & Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Secrets & Environment variables (NEVER COMMIT)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Database & SQLite files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Logs & Diagnostics
+logs/
+*.log
+
+# Caches & Test Tools
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE & Editor artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS Artifacts
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Temporary files
+scratch/
+tmp/
