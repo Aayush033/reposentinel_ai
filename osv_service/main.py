@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 
 from .config import get_settings
 from .osv_client import OSVAPIError, OSVClient
@@ -28,16 +29,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
-from demo_extensions.pypi_registry_router import router as pypi_registry_router
-from osv_service.package_registry import fetch_pypi_latest_release, PyPIAPIError
 
-@app.get("/registry/pypi/{package_name}/latest-release", summary="Get the latest published release for a PyPI package")
-async def get_pypi_latest_release(package_name: str):
-    """Query https://pypi.org/pypi/{package_name}/json for the real latest published version."""
-    try:
-        return await fetch_pypi_latest_release(package_name)
-    except PyPIAPIError as err:
-        raise HTTPException(status_code=err.status_code, detail={"error": err.message, "source_url": err.source_url})
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect root access to interactive OpenAPI docs."""
+    return RedirectResponse(url="/docs")
 
 
 def _raise_http(err: OSVAPIError) -> None:

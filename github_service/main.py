@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
 
 from .config import get_settings
 from .dependency_parser import (
@@ -46,6 +47,12 @@ app = FastAPI(
     description="System A: Real-time GitHub REST API repository, dependency manifest, issue, PR, and commit service.",
     version="1.0.0",
 )
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect root access to interactive OpenAPI docs."""
+    return RedirectResponse(url="/docs")
 
 
 def _to_provenance(result: dict) -> ProvenanceMeta:

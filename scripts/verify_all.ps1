@@ -34,13 +34,31 @@ foreach ($f in $files) { Check $f (Test-Path $f) }
 
 # --- Running HTTP Services ---
 Write-Host "`n[Service Health]"
-foreach ($pair in @(@("GitHub Service", "http://127.0.0.1:8001"), @("OSV Service", "http://127.0.0.1:8002"), @("Gateway", "http://127.0.0.1:8000"))) {
+$startedProcs = @()
+foreach ($svc in @(
+    @{ Name = "GitHub Service"; Port = 8001; App = "github_service.main:app" },
+    @{ Name = "OSV Service";    Port = 8002; App = "osv_service.main:app" },
+    @{ Name = "Gateway";        Port = 8000; App = "copilot_gateway.main:app" }
+)) {
+    $url = "http://127.0.0.1:$($svc.Port)"
+    $ready = $false
     try {
-        $r = Invoke-WebRequest -Uri "$($pair[1])/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
-        Check "$($pair[0]) reachable" ($r.StatusCode -eq 200)
-    } catch {
-        Check "$($pair[0]) reachable" $false
+        $r = Invoke-WebRequest -Uri "$url/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+        if ($r.StatusCode -eq 200) { $ready = $true }
+    } catch {}
+
+    if (-not $ready) {
+        $proc = Start-Process -FilePath $VENV -ArgumentList "-m", "uvicorn", $svc.App, "--host", "127.0.0.1", "--port", "$($svc.Port)" -WorkingDirectory $ROOT -WindowStyle Hidden -PassThru
+        $startedProcs += $proc
+        for ($i = 0; $i -lt 15; $i++) {
+            Start-Sleep -Seconds 1
+            try {
+                $r = Invoke-WebRequest -Uri "$url/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+                if ($r.StatusCode -eq 200) { $ready = $true; break }
+            } catch {}
+        }
     }
+    Check "$($svc.Name) reachable" $ready
 }
 
 # --- MCP servers (strict dynamic tool discovery check) ---
@@ -90,6 +108,11 @@ Write-Host "`n[Pytest Suite]"
 & $VENV -m pytest tests/ -v --tb=short
 $pytestExit = $LASTEXITCODE
 Check "Pytest suite" ($pytestExit -eq 0)
+
+# Cleanup auto-started verification processes
+foreach ($p in $startedProcs) {
+    try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
+}
 
 if ($allPassed) {
     Write-Host "`n=== ALL CHECKS PASSED ===" -ForegroundColor Green

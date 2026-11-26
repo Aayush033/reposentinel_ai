@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 import httpx
@@ -186,6 +187,7 @@ class TestOSVServiceHealth:
                     ]
                 },
             )
+        await asyncio.sleep(0.05)
         assert resp.status_code == 200
         data = resp.json()
         assert data["queried_count"] == 0
@@ -211,9 +213,10 @@ class TestOSVServiceLiveAPI:
     @pytest.mark.anyio
     async def test_vulnerable_package_detected(self, tmp_db):
         """requests 2.19.0 is known vulnerable — OSV must return at least one finding."""
-        async with httpx.AsyncClient(
+        client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=osv_app), base_url="http://test"
-        ) as client:
+        )
+        try:
             resp = await client.post(
                 "/vulnerabilities/query-batch",
                 json={
@@ -226,6 +229,13 @@ class TestOSVServiceLiveAPI:
                     ]
                 },
             )
+        finally:
+            try:
+                await client.aclose()
+            except RuntimeError:
+                pass
+            await asyncio.sleep(0.1)
+
         assert resp.status_code == 200
         data = resp.json()
         assert data["total_vulnerabilities_found"] > 0, (
@@ -239,10 +249,18 @@ class TestOSVServiceLiveAPI:
 
     @pytest.mark.anyio
     async def test_vulnerability_detail_real_data(self, tmp_db):
-        async with httpx.AsyncClient(
+        client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=osv_app), base_url="http://test"
-        ) as client:
+        )
+        try:
             resp = await client.get("/vulnerabilities/GHSA-j8r2-6x86-q33q")
+        finally:
+            try:
+                await client.aclose()
+            except RuntimeError:
+                pass
+            await asyncio.sleep(0.1)
+
         assert resp.status_code == 200
         data = resp.json()
         assert data["vulnerability_id"] == "GHSA-j8r2-6x86-q33q"
