@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -11,12 +12,27 @@ from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
 
 from .agent_orchestrator import run_agent, run_commit_check, run_full_scan
-from .database import create_tables
+from .auth import (
+    check_rate_limit,
+    clear_failed_logins,
+    clear_session_cookie,
+    create_user_session,
+    get_current_user,
+    get_current_user_optional,
+    get_token_from_request,
+    hash_password,
+    record_failed_login,
+    revoke_session,
+    set_session_cookie,
+    verify_password,
+)
+from .database import ProjectRecord, UserRecord, create_tables, get_session, now_iso
 from .gemini_provider import is_gemini_available
 from .groq_provider import is_groq_available
 from .history_service import HistoryService
@@ -26,13 +42,20 @@ from .schemas import (
     ChatResponse,
     CommitCheckRequest,
     CommitCheckResponse,
+    DashboardOverviewResponse,
     DiscoveredTool,
     HealthResponse,
     HistoryRecord,
     LiveStateResponse,
+    LoginRequest,
     MCPToolsResponse,
+    ProjectCreateRequest,
+    ProjectListResponse,
+    ProjectResponse,
+    RegisterRequest,
     ScanRequest,
     ScanResponse,
+    UserResponse,
 )
 from .tavily_provider import is_tavily_available
 
@@ -47,13 +70,16 @@ _OSV_SVC_URL = os.getenv("OSV_SERVICE_URL", "http://127.0.0.1:8002")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_tables()
-    mcp = get_mcp_client()
-    try:
-        await mcp.refresh_tools()
-    except Exception as _exc:  # noqa: BLE001
-        import logging as _log
+    if not os.getenv("PYTEST_CURRENT_TEST") and not os.getenv("SKIP_MCP_STARTUP"):
+        mcp = get_mcp_client()
+        try:
+            await mcp.refresh_tools()
+        except Exception as _exc:  # noqa: BLE001
+            import logging as _log
 
-        _log.getLogger(__name__).warning("MCP tool refresh failed at startup: %s", _exc)
+            _log.getLogger(__name__).warning(
+                "MCP tool refresh failed at startup: %s", _exc
+            )
     yield
 
 
@@ -160,9 +186,15 @@ async def refresh_mcp_tools() -> MCPToolsResponse:
     response_model=ScanResponse,
     summary="Run a cross-system security scan via MCP",
 )
-async def run_scan(request: ScanRequest) -> ScanResponse:
+async def run_scan(
+    request: ScanRequest,
+    current_user: UserRecord | None = Depends(get_current_user_optional),  # noqa: B008
+) -> ScanResponse:
     started_at = datetime.now(UTC).isoformat()
-    scan_id = history.create_scan(request.owner.strip(), request.repo.strip())
+    user_id = current_user.id if current_user else None
+    scan_id = history.create_scan(
+        request.owner.strip(), request.repo.strip(), user_id=user_id
+    )
     start_ns = time.monotonic_ns()
     mcp = get_mcp_client()
 
@@ -191,6 +223,12 @@ async def run_scan(request: ScanRequest) -> ScanResponse:
             "open_remediation_prs": scan_result["open_remediation_prs"],
         }
 
+        primary_manifest = (
+            scan_result["manifests_found"][0]
+            if scan_result["manifests_found"]
+            else None
+        )
+
         history.complete_scan(
             scan_id=scan_id,
             status="completed",
@@ -201,7 +239,24 @@ async def run_scan(request: ScanRequest) -> ScanResponse:
             total_vulnerabilities=scan_result["total_vulnerabilities"],
             scan_summary=summary_payload,
             duration_seconds=duration_s,
+            manifest_file=primary_manifest,
         )
+
+        # Update project last scanned time if tracked
+        if user_id is not None:
+            with get_session() as db:
+                p = db.scalar(
+                    select(ProjectRecord).where(
+                        ProjectRecord.user_id == user_id,
+                        ProjectRecord.owner == request.owner.strip(),
+                        ProjectRecord.repo == request.repo.strip(),
+                    )
+                )
+                if p:
+                    p.last_scanned_at = completed_at
+                    if primary_manifest:
+                        p.primary_manifest = primary_manifest
+                    db.commit()
 
         return ScanResponse(
             scan_id=scan_id,
@@ -424,6 +479,367 @@ async def get_live_state() -> LiveStateResponse:
     )
 
 
+# --- Authentication Endpoints ---
+
+
+@app.post(
+    "/api/auth/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new local user account with Argon2id password hashing",
+)
+async def register_user(request: RegisterRequest, response: Response):
+    username = request.username.strip().lower()
+    email = request.email.strip().lower()
+
+    with get_session() as db:
+        existing = db.scalar(
+            select(UserRecord).where(
+                (UserRecord.username == username) | (UserRecord.email == email)
+            )
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username or email is already registered.",
+            )
+
+        pwd_hash = hash_password(request.password)
+        user = UserRecord(
+            username=username,
+            email=email,
+            password_hash=pwd_hash,
+            full_name=request.full_name.strip() if request.full_name else None,
+            created_at=now_iso(),
+            last_login_at=now_iso(),
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        user_resp = UserResponse(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            full_name=user.full_name,
+            created_at=user.created_at,
+            last_login_at=user.last_login_at,
+        )
+
+    raw_token, _ = create_user_session(user_resp.id)
+    set_session_cookie(response, raw_token)
+    return user_resp
+
+
+@app.post(
+    "/api/auth/login",
+    response_model=UserResponse,
+    summary="Authenticate user and issue secure HTTP-only session cookie",
+)
+async def login_user(
+    request: LoginRequest,
+    req: Request,
+    response: Response,
+):
+    login_id = request.username_or_email.strip().lower()
+    check_rate_limit(login_id)
+
+    with get_session() as db:
+        user = db.scalar(
+            select(UserRecord).where(
+                (UserRecord.username == login_id) | (UserRecord.email == login_id)
+            )
+        )
+        if not user or not verify_password(request.password, user.password_hash):
+            record_failed_login(login_id)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username/email or password.",
+            )
+
+        clear_failed_logins(login_id)
+        user.last_login_at = now_iso()
+        db.commit()
+
+        user_resp = UserResponse(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            full_name=user.full_name,
+            created_at=user.created_at,
+            last_login_at=user.last_login_at,
+        )
+
+    raw_token, _ = create_user_session(
+        user_resp.id,
+        ip_address=req.client.host if req.client else None,
+        user_agent=req.headers.get("user-agent"),
+    )
+    set_session_cookie(response, raw_token)
+    return user_resp
+
+
+@app.post(
+    "/api/auth/logout",
+    summary="Revoke session and clear session cookie",
+)
+async def logout_user(
+    response: Response,
+    token: str | None = Depends(get_token_from_request),
+):
+    if token:
+        revoke_session(token)
+    clear_session_cookie(response)
+    return {"status": "ok", "message": "Logged out successfully."}
+
+
+@app.get(
+    "/api/auth/me",
+    response_model=UserResponse,
+    summary="Return authenticated profile for the current session",
+)
+async def get_current_user_profile(
+    current_user: UserRecord = Depends(get_current_user),  # noqa: B008
+):
+    return UserResponse(
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        created_at=current_user.created_at,
+        last_login_at=current_user.last_login_at,
+    )
+
+
+# --- Project Management Endpoints ---
+
+
+def _parse_repo_slug(url_or_slug: str) -> tuple[str, str]:
+    raw = url_or_slug.strip().rstrip("/")
+    raw = re.sub(r"^https?://github\.com/", "", raw, flags=re.IGNORECASE)
+    raw = raw.removesuffix(".git")
+    parts = raw.split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid GitHub repository format. Use 'owner/repo' or 'https://github.com/owner/repo'",
+        )
+    return parts[0], parts[1]
+
+
+@app.get(
+    "/api/projects",
+    response_model=ProjectListResponse,
+    summary="List onboarded repositories for the authenticated user",
+)
+async def list_projects(
+    current_user: UserRecord = Depends(get_current_user),  # noqa: B008
+):
+    with get_session() as db:
+        projects = (
+            db.execute(
+                select(ProjectRecord)
+                .where(ProjectRecord.user_id == current_user.id)
+                .order_by(ProjectRecord.id.desc())
+            )
+            .scalars()
+            .all()
+        )
+
+        result = [
+            ProjectResponse(
+                id=p.id,
+                owner=p.owner,
+                repo=p.repo,
+                default_branch=p.default_branch,
+                description=p.description,
+                stars=p.stars,
+                forks=p.forks,
+                open_issues=p.open_issues,
+                primary_manifest=p.primary_manifest,
+                created_at=p.created_at,
+                last_scanned_at=p.last_scanned_at,
+            )
+            for p in projects
+        ]
+        return ProjectListResponse(projects=result, total_projects=len(result))
+
+
+@app.post(
+    "/api/projects",
+    response_model=ProjectResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Onboard a GitHub repository persistently after verifying via GitHub API",
+)
+async def create_project(
+    request: ProjectCreateRequest,
+    current_user: UserRecord = Depends(get_current_user),  # noqa: B008
+):
+    owner, repo = _parse_repo_slug(request.repo_url_or_slug)
+
+    with get_session() as db:
+        existing = db.scalar(
+            select(ProjectRecord).where(
+                ProjectRecord.user_id == current_user.id,
+                ProjectRecord.owner == owner,
+                ProjectRecord.repo == repo,
+            )
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Repository {owner}/{repo} is already onboarded.",
+            )
+
+    # Verify repository through genuine GitHub service
+    metadata: dict = {}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(f"{_GITHUB_SVC_URL}/repos/{owner}/{repo}")
+            if resp.status_code == 200:
+                metadata = resp.json()
+            elif resp.status_code == 404:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Repository '{owner}/{repo}' was not found on GitHub.",
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        import logging as _log
+
+        _log.getLogger(__name__).warning("GitHub verification probe error: %s", exc)
+
+    with get_session() as db:
+        project = ProjectRecord(
+            user_id=current_user.id,
+            owner=owner,
+            repo=repo,
+            default_branch=metadata.get("default_branch", "main"),
+            description=metadata.get("description"),
+            stars=metadata.get("stars", 0),
+            forks=metadata.get("forks", 0),
+            open_issues=metadata.get("open_issues", 0),
+            primary_manifest=None,
+            created_at=now_iso(),
+            last_scanned_at=None,
+        )
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+
+        return ProjectResponse(
+            id=project.id,
+            owner=project.owner,
+            repo=project.repo,
+            default_branch=project.default_branch,
+            description=project.description,
+            stars=project.stars,
+            forks=project.forks,
+            open_issues=project.open_issues,
+            primary_manifest=project.primary_manifest,
+            created_at=project.created_at,
+            last_scanned_at=project.last_scanned_at,
+        )
+
+
+@app.get(
+    "/api/projects/{project_id}",
+    response_model=ProjectResponse,
+    summary="Get details of a single onboarded repository",
+)
+async def get_project(
+    project_id: int,
+    current_user: UserRecord = Depends(get_current_user),  # noqa: B008
+):
+    with get_session() as db:
+        project = db.scalar(
+            select(ProjectRecord).where(
+                ProjectRecord.id == project_id,
+                ProjectRecord.user_id == current_user.id,
+            )
+        )
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found.")
+        return ProjectResponse(
+            id=project.id,
+            owner=project.owner,
+            repo=project.repo,
+            default_branch=project.default_branch,
+            description=project.description,
+            stars=project.stars,
+            forks=project.forks,
+            open_issues=project.open_issues,
+            primary_manifest=project.primary_manifest,
+            created_at=project.created_at,
+            last_scanned_at=project.last_scanned_at,
+        )
+
+
+@app.delete(
+    "/api/projects/{project_id}",
+    summary="Remove an onboarded repository",
+)
+async def delete_project(
+    project_id: int,
+    current_user: UserRecord = Depends(get_current_user),  # noqa: B008
+):
+    with get_session() as db:
+        project = db.scalar(
+            select(ProjectRecord).where(
+                ProjectRecord.id == project_id,
+                ProjectRecord.user_id == current_user.id,
+            )
+        )
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found.")
+        db.delete(project)
+        db.commit()
+    return {"status": "ok", "message": f"Project {project_id} removed successfully."}
+
+
+# --- Moole-Inspired Dashboard Overview Endpoint ---
+
+
+@app.get(
+    "/api/dashboard/overview",
+    response_model=DashboardOverviewResponse,
+    summary="Return real vulnerability distribution and onboarded repositories for Moole layout",
+)
+async def get_dashboard_overview(
+    current_user: UserRecord | None = Depends(get_current_user_optional),  # noqa: B008
+):
+    user_id = current_user.id if current_user else None
+    data = history.get_dashboard_overview(user_id=user_id)
+    return DashboardOverviewResponse(
+        total_onboarded_repositories=data["total_onboarded_repositories"],
+        selected_project=None,
+        critical_total=data["critical_total"],
+        high_total=data["high_total"],
+        medium_total=data["medium_total"],
+        low_total=data["low_total"],
+        total_vulnerabilities=data["total_vulnerabilities"],
+        repositories=data["repositories"],
+    )
+
+
+# --- HTML5 Page Navigation Routes ---
+
+
+_INDEX_FILE = _STATIC_DIR / "index.html"
+
+
 @app.get("/", include_in_schema=False)
-async def root():
-    return RedirectResponse(url="/static/index.html")
+@app.get("/login", include_in_schema=False)
+@app.get("/register", include_in_schema=False)
+@app.get("/dashboard", include_in_schema=False)
+@app.get("/projects", include_in_schema=False)
+@app.get("/vulnerabilities", include_in_schema=False)
+@app.get("/github-correlation", include_in_schema=False)
+@app.get("/commit-security", include_in_schema=False)
+@app.get("/copilot", include_in_schema=False)
+@app.get("/mcp-inspector", include_in_schema=False)
+@app.get("/activity", include_in_schema=False)
+@app.get("/settings", include_in_schema=False)
+async def serve_app():
+    return FileResponse(str(_INDEX_FILE))

@@ -6,6 +6,10 @@ import sys
 
 import pytest
 
+# Skip spawning MCP stdio subprocesses during tests (they require live services)
+os.environ.setdefault("SKIP_MCP_STARTUP", "1")
+
+# Windows: force SelectorEventLoop so anyio doesn't hang on socket.socketpair()
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 

@@ -188,3 +188,89 @@ class CommitCheckResponse(BaseModel):
     execution_trace: list[ToolCallTrace] = Field(default_factory=list)
     trace: list[ToolCallTrace] = Field(default_factory=list)
     note: str | None = None
+
+
+# --- Authentication & User Schemas ---
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(
+        ..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_\-\.]+$"
+    )
+    email: str = Field(..., min_length=5, max_length=200)
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: str | None = Field(default=None, max_length=200)
+
+
+class LoginRequest(BaseModel):
+    username_or_email: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    full_name: str | None = None
+    created_at: str
+    last_login_at: str | None = None
+
+
+# --- Project Management Schemas ---
+
+
+class ProjectCreateRequest(BaseModel):
+    repo_url_or_slug: str = Field(
+        ...,
+        min_length=3,
+        description="GitHub repo slug ('owner/repo') or full URL ('https://github.com/owner/repo')",
+    )
+
+
+class ProjectResponse(BaseModel):
+    id: int
+    owner: str
+    repo: str
+    default_branch: str
+    description: str | None = None
+    stars: int = 0
+    forks: int = 0
+    open_issues: int = 0
+    primary_manifest: str | None = None
+    created_at: str
+    last_scanned_at: str | None = None
+    latest_scan: dict[str, Any] | None = None
+
+
+class ProjectListResponse(BaseModel):
+    projects: list[ProjectResponse]
+    total_projects: int
+
+
+# --- Enterprise Moole-Inspired Dashboard Schemas ---
+
+
+class RepositoryTableRow(BaseModel):
+    id: int
+    owner: str
+    repo: str
+    repository: str
+    critical: int = 0
+    high: int = 0
+    medium: int = 0
+    low: int = 0
+    build_file: str = "Unknown"
+    integration: str = "GitHub"
+    last_scan: str | None = None
+    last_scan_id: int | None = None
+
+
+class DashboardOverviewResponse(BaseModel):
+    total_onboarded_repositories: int
+    selected_project: str | None = None
+    critical_total: int
+    high_total: int
+    medium_total: int
+    low_total: int
+    total_vulnerabilities: int
+    repositories: list[RepositoryTableRow]

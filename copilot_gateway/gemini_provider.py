@@ -47,7 +47,16 @@ async def gemini_synthesize(
     client = genai.Client(api_key=api_key)
     full_prompt = prompt if not context else f"{context}\n\n{prompt}"
 
-    candidates = [primary] if fallback == primary else [primary, fallback]
+    raw_candidates = [
+        primary,
+        fallback,
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
+        "gemini-1.5-pro",
+    ]
+    candidates = list(dict.fromkeys(raw_candidates))
     last_error = "Gemini synthesis failed."
 
     for model_id in candidates:

@@ -19,26 +19,6 @@ mcp = MCPServer("osv_service")
 
 
 @mcp.tool(
-    name="fetch_pypi_latest_release_version",
-    description="Calls the PyPI JSON API for the given package name and returns the real latest published version; on PyPI API errors it raises an HTTPException with the error details.",
-)
-def fetch_pypi_latest_release_version(package_name: Any = None) -> dict:
-    url = f"{_BASE_URL}/registry/pypi/{package_name}/latest-release"
-    headers = {}
-    resp = requests.get(url, headers=headers)
-    if resp.status_code >= 400:
-        return {
-            "error": f"HTTP {resp.status_code}",
-            "detail": resp.text[:400],
-            "source_url": url,
-        }
-    try:
-        return resp.json()
-    except ValueError:
-        return {"status_code": resp.status_code, "text": resp.text}
-
-
-@mcp.tool(
     name="get_service_health_status",
     description="Collects and returns a HealthResponse containing service status, listening port, upstream OSV API URL, cache statistics, and whether the PyPI registry extension endpoint is active.",
 )

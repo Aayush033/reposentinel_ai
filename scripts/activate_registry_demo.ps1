@@ -22,7 +22,16 @@ foreach ($p in $cimProcs) {
 
 $tcpListeners = Get-NetTCPConnection -LocalPort 8002 -State Listen -ErrorAction SilentlyContinue
 foreach ($conn in $tcpListeners) {
-    if ($conn.OwningProcess -gt 0) { $targetPids += [int]$conn.OwningProcess }
+    $procId = [int]$conn.OwningProcess
+    if ($procId -gt 0) {
+        $p = Get-CimInstance Win32_Process -Filter "ProcessId = $procId" -ErrorAction SilentlyContinue
+        if ($p -and ($p.CommandLine -like "*osv_service*" -or $p.CommandLine -like "*uvicorn*")) {
+            $targetPids += $procId
+        } else {
+            Write-Error "Port 8002 is owned by an unrelated process '$($p.Name)' (PID: $procId, Cmd: $($p.CommandLine)). Aborting to protect unrelated processes."
+            exit 1
+        }
+    }
 }
 
 $targetPids = $targetPids | Select-Object -Unique
