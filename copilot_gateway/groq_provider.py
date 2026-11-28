@@ -14,8 +14,22 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 _PRIMARY_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 _FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-20b")
-_MAX_RETRIES = 3
-_BASE_BACKOFF = 2.0
+
+# Comprehensive model fallback chain for free-tier rate and token limits
+_CANDIDATE_MODELS = [
+    _PRIMARY_MODEL,
+    _FALLBACK_MODEL,
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",  # 30,000 TPM limit on free tier, high throughput
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
+    "qwen-2.5-32b",
+]
+# Deduplicate while preserving order
+GROQ_MODEL_CHAIN: list[str] = list(dict.fromkeys(_CANDIDATE_MODELS))
+
+_MAX_RETRIES = 2
+_BASE_BACKOFF = 1.5
 
 
 def _get_client() -> AsyncGroq:
@@ -64,18 +78,23 @@ async def _call_with_retry(
                 },
                 "finish_reason": response.choices[0].finish_reason,
             }
-        except RateLimitError:
+        except RateLimitError as exc:
             if attempt < _MAX_RETRIES - 1:
                 wait = _BASE_BACKOFF ** (attempt + 1)
                 await asyncio.sleep(wait)
                 continue
             return {
                 "success": False,
-                "error": "Groq rate limit exceeded after retries",
+                "error": f"Groq rate limit exceeded on {model}: {exc}",
                 "model": model,
                 "retryable": True,
             }
         except APIStatusError as exc:
+            is_rate_or_token_limit = (
+                exc.status_code in (413, 429, 503, 502, 504)
+                or "tokens per minute" in str(exc).lower()
+                or "rate_limit_exceeded" in str(exc).lower()
+            )
             if exc.status_code in (503, 502, 504) and attempt < _MAX_RETRIES - 1:
                 await asyncio.sleep(_BASE_BACKOFF ** (attempt + 1))
                 continue
@@ -83,7 +102,7 @@ async def _call_with_retry(
                 "success": False,
                 "error": f"Groq API error {exc.status_code}: {exc.message}",
                 "model": model,
-                "retryable": False,
+                "retryable": is_rate_or_token_limit,
             }
         except APIConnectionError as exc:
             return {
@@ -108,7 +127,7 @@ async def groq_chat_with_tools(
     tool_choice: str | dict | None = None,
     max_tokens: int = 4096,
 ) -> dict[str, Any]:
-    """Submit a chat completion request to Groq with tool-calling support and model fallback."""
+    """Submit a chat completion request to Groq with tool-calling support and multi-model fallback."""
     if not os.getenv("GROQ_API_KEY"):
         return {
             "success": False,
@@ -118,23 +137,37 @@ async def groq_chat_with_tools(
 
     client = _get_client()
 
-    # Try primary model first
-    result = await _call_with_retry(
-        client, _PRIMARY_MODEL, messages, tools, tool_choice, max_tokens
-    )
-    if result["success"]:
-        return result
+    last_error_result: dict[str, Any] = {
+        "success": False,
+        "error": "No Groq models available",
+        "model": _PRIMARY_MODEL,
+    }
 
-    # Fall back to smaller model
-    if result.get("retryable", True):
-        fallback_result = await _call_with_retry(
-            client, _FALLBACK_MODEL, messages, tools, tool_choice, max_tokens
+    # Iterate through all configured models in priority order
+    for idx, candidate_model in enumerate(GROQ_MODEL_CHAIN):
+        result = await _call_with_retry(
+            client, candidate_model, messages, tools, tool_choice, max_tokens
         )
-        if fallback_result["success"]:
-            fallback_result["fallback_from"] = _PRIMARY_MODEL
-            return fallback_result
+        if result.get("success"):
+            if idx > 0:
+                result["fallback_from"] = _PRIMARY_MODEL
+            return result
 
-    return result
+        last_error_result = result
+        # If error was not retryable or rate-limited, still try next model if it was a token/model issue
+        err_msg = str(result.get("error", "")).lower()
+        if not (
+            result.get("retryable", False)
+            or "token" in err_msg
+            or "rate" in err_msg
+            or "413" in err_msg
+            or "429" in err_msg
+            or "not found" in err_msg
+        ):
+            # Non-recoverable auth or format error
+            break
+
+    return last_error_result
 
 
 def is_groq_available() -> bool:

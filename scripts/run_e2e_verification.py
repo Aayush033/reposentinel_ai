@@ -211,21 +211,42 @@ async def run_e2e():
                 },
             )
             chat_duration = round(time.time() - t0, 2)
-            if chat_resp.status_code == 200:
-                ch = chat_resp.json()
+            if chat_resp.status_code != 200:
                 print(
-                    f"  [OK] AI agent responded in {chat_duration}s (status: {ch.get('status')})"
+                    f"  [FAIL] Chat returned HTTP {chat_resp.status_code}: {chat_resp.text[:300]}"
                 )
-                print(f"       Groq model used: {ch.get('groq_model_used')}")
-                print(f"       Gemini model used: {ch.get('gemini_model_used')}")
-                print(f"       Total tool calls: {ch.get('total_tool_calls')}")
+                return False
+
+            ch = chat_resp.json()
+            response_text = (ch.get("response") or "").strip()
+            if not response_text:
+                print("  [FAIL] AI Copilot response is missing or empty!")
+                return False
+
+            if ch.get("status") == "error":
                 print(
-                    f"       Agent response preview: {ch.get('response', '')[:200]}..."
+                    f"  [FAIL] AI Copilot reported execution failure: {ch.get('error_message')}"
                 )
-            else:
+                return False
+
+            if not ch.get("groq_model_used"):
+                print("  [FAIL] Expected Groq model used information is missing!")
+                return False
+
+            tool_calls = ch.get("total_tool_calls", 0)
+            if tool_calls < 1:
                 print(
-                    f"  [WARN] Chat returned HTTP {chat_resp.status_code}: {chat_resp.text[:200]}"
+                    f"  [FAIL] Required MCP tool calls were absent! (got {tool_calls})"
                 )
+                return False
+
+            print(
+                f"  [OK] AI agent responded in {chat_duration}s (status: {ch.get('status')})"
+            )
+            print(f"       Groq model used: {ch.get('groq_model_used')}")
+            print(f"       Gemini model used: {ch.get('gemini_model_used')}")
+            print(f"       Total tool calls: {tool_calls}")
+            print(f"       Agent response preview: {response_text[:200]}...")
 
             print("\n" + "=" * 60)
             print("ALL END-TO-END TESTS (A, B, C) COMPLETED SUCCESSFULLY")

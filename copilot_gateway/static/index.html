@@ -3,488 +3,776 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="RepoSentinel AI — Automated repository security analysis powered by MCP and AI">
-  <title>RepoSentinel AI · Security Dashboard</title>
+  <meta name="description" content="RepoSentinel AI — Synapse-Powered Cross-System Enterprise Repository Security Copilot">
+  <title>RepoSentinel AI · Enterprise Security Platform</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="theme-navy">
 
 <!-- ══════════════════════════════════════════════════════════
-     APP HEADER
+     TOP APPLICATION HEADER (Moole-Inspired)
 ══════════════════════════════════════════════════════════ -->
-<header class="app-header">
-  <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle menu">☰</button>
+<header class="app-header" id="app-header">
+  <div class="header-left">
+    <button class="rail-toggle-btn" id="rail-toggle-btn" title="Toggle Sidebar (Expand/Collapse)" aria-label="Toggle Navigation Rail">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </button>
+    <div class="app-brand" id="brand-home-link" role="button" tabindex="0">
+      <div class="brand-shield-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+      </div>
+      <div class="brand-title">RepoSentinel <span>AI</span></div>
+    </div>
 
-  <div class="app-logo">
-    <div class="app-logo-icon">🛡️</div>
-    <div class="app-logo-text">Repo<span>Sentinel</span> AI</div>
+    <!-- Project Selector Context Pill -->
+    <div class="project-selector-wrapper" id="project-selector-wrapper">
+      <button class="project-pill-btn" id="project-pill-btn" aria-haspopup="true" aria-expanded="false">
+        <span class="project-pill-badge" id="project-pill-badge">M</span>
+        <span class="project-pill-name" id="project-pill-name">All Repositories</span>
+        <svg class="pill-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </button>
+      <div class="project-dropdown-menu" id="project-dropdown-menu" style="display:none;">
+        <div class="dropdown-header">Switch Project Context</div>
+        <div class="dropdown-list" id="project-dropdown-list">
+          <!-- Dynamically populated -->
+          <div class="dropdown-item active" data-project-id="all">
+            <span class="item-badge">ALL</span>
+            <span class="item-name">All Repositories</span>
+          </div>
+        </div>
+        <div class="dropdown-footer">
+          <button class="btn btn-sm btn-outline w-100" id="btn-header-add-project">+ Onboard Repository</button>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="header-spacer"></div>
+  <div class="header-center">
+    <div class="global-search-bar" id="global-search-bar">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="text" id="global-search-input" placeholder="Search repositories, CVEs, or advisories... (Ctrl+K)" autocomplete="off">
+    </div>
+  </div>
 
-  <div class="header-status" role="status" aria-label="Service status">
-    <span class="status-pill unk" id="pill-github-service">
-      <span class="pill-dot"></span>GitHub Service
-    </span>
-    <span class="status-pill unk" id="pill-osv-service">
-      <span class="pill-dot"></span>OSV Service
-    </span>
-    <span class="status-pill unk" id="pill-github-mcp">
-      <span class="pill-dot"></span>GitHub MCP
-    </span>
-    <span class="status-pill unk" id="pill-osv-mcp">
-      <span class="pill-dot"></span>OSV MCP
-    </span>
-    <span class="status-pill unk" id="pill-groq">
-      <span class="pill-dot"></span>Groq
-    </span>
-    <span class="status-pill unk" id="pill-gemini">
-      <span class="pill-dot"></span>Gemini
-    </span>
+  <div class="header-right">
+    <!-- Live Microservices Indicator Tooltip -->
+    <div class="services-pills-bar" id="services-pills-bar">
+      <span class="status-indicator-dot ok" id="status-gh-dot" title="GitHub Service (Port 8001)"></span>
+      <span class="status-indicator-dot ok" id="status-osv-dot" title="OSV Service (Port 8002)"></span>
+      <span class="status-indicator-dot ok" id="status-mcp-dot" title="Synapse MCP Servers"></span>
+    </div>
+
+    <!-- Notifications Bell -->
+    <button class="icon-nav-btn" id="notifications-btn" title="System Notifications">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+      <span class="notification-badge" id="notification-badge" style="display:none;"></span>
+    </button>
+
+    <!-- User Authentication Area -->
+    <div class="auth-header-area" id="auth-header-area">
+      <!-- Unauthenticated buttons -->
+      <div id="unauth-controls" class="unauth-controls">
+        <button class="btn btn-sm btn-ghost" id="btn-nav-login">Sign In</button>
+        <button class="btn btn-sm btn-primary" id="btn-nav-register">Create Account</button>
+      </div>
+
+      <!-- Authenticated Profile Menu -->
+      <div id="auth-controls" class="auth-controls" style="display:none;">
+        <button class="user-avatar-btn" id="user-avatar-btn" aria-haspopup="true">
+          <span class="user-avatar-text" id="user-avatar-initials">RS</span>
+        </button>
+        <div class="user-dropdown-menu" id="user-dropdown-menu" style="display:none;">
+          <div class="user-dropdown-info">
+            <div class="user-full-name" id="menu-user-name">Security Analyst</div>
+            <div class="user-email" id="menu-user-email">analyst@reposentinel.local</div>
+          </div>
+          <div class="dropdown-divider"></div>
+          <button class="user-dropdown-item" id="menu-item-home">Application Home</button>
+          <button class="user-dropdown-item" id="menu-item-projects">My Projects</button>
+          <button class="user-dropdown-item" id="menu-item-settings">Account Settings</button>
+          <div class="dropdown-divider"></div>
+          <button class="user-dropdown-item text-danger" id="menu-item-logout">Sign Out</button>
+        </div>
+      </div>
+    </div>
   </div>
 </header>
 
-<!-- Mobile sidebar overlay -->
-<div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
-
-<!-- Global loading overlay -->
-<div id="global-loading" class="loading-overlay" style="display:none;position:fixed;inset:0;z-index:300;" aria-live="polite">
-  <div class="loading-spinner lg"></div>
-  <div class="loading-overlay-text">Running scan…</div>
-</div>
-
-<!-- Alert banner container -->
+<!-- Global Alert Container -->
 <div class="alert-container" id="alert-container" aria-live="assertive" role="alert"></div>
 
+<!-- Global Loading Overlay -->
+<div id="global-loading" class="loading-overlay" style="display:none;">
+  <div class="loading-spinner lg"></div>
+  <div class="loading-overlay-text" id="global-loading-text">Analyzing repository...</div>
+</div>
+
 <!-- ══════════════════════════════════════════════════════════
-     APP SHELL
+     APPLICATION SHELL (Side Rail + Main Workspace)
 ══════════════════════════════════════════════════════════ -->
-<div class="app-shell">
+<div class="app-shell" id="app-shell">
 
-  <!-- ── SIDEBAR ─────────────────────────────────────────── -->
-  <nav class="sidebar" id="sidebar" aria-label="Main navigation">
-    <div class="sidebar-section-label">Navigation</div>
-    <div class="sidebar-nav">
+  <!-- ── LEFT NAVIGATION RAIL (Moole Style: Collapsible) ──── -->
+  <aside class="nav-rail" id="nav-rail" aria-label="Navigation rail">
+    <div class="rail-items-group">
+      <!-- 1. Landing (Public / Info) -->
+      <button class="rail-item" data-view="landing" title="Public Overview & Architecture">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+        <span class="rail-label">Overview</span>
+      </button>
 
-      <div class="nav-item active" id="nav-scan" data-section="scan" role="button" tabindex="0" aria-label="Repository Scan">
-        <span class="nav-icon">🔍</span>
-        <span class="nav-label">Repository Scan</span>
-      </div>
+      <!-- 2. Home (Authenticated) -->
+      <button class="rail-item" data-view="home" title="Application Home & Quick Scan">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+        <span class="rail-label">Home</span>
+      </button>
 
-      <div class="nav-item" id="nav-vulnerabilities" data-section="vulnerabilities" role="button" tabindex="0" aria-label="Vulnerabilities">
-        <span class="nav-icon">🛡️</span>
-        <span class="nav-label">Vulnerabilities</span>
-      </div>
+      <!-- 3. Security Dashboard (Moole inspired) -->
+      <button class="rail-item active" data-view="dashboard" title="Security Dashboard">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+        <span class="rail-label">Dashboard</span>
+      </button>
 
-      <div class="nav-item" id="nav-github" data-section="github" role="button" tabindex="0" aria-label="GitHub Correlation">
-        <span class="nav-icon">🐙</span>
-        <span class="nav-label">GitHub Correlation</span>
-      </div>
+      <!-- 4. Projects -->
+      <button class="rail-item" data-view="projects" title="Onboarded Repositories">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        <span class="rail-label">Projects</span>
+      </button>
 
-      <div class="nav-item" id="nav-commit" data-section="commit" role="button" tabindex="0" aria-label="Commit Security Lookup">
-        <span class="nav-icon">🔎</span>
-        <span class="nav-label">Commit Lookup</span>
-      </div>
+      <!-- 5. Vulnerabilities -->
+      <button class="rail-item" data-view="vulnerabilities" title="Vulnerability Intelligence">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        <span class="rail-label">Vulnerabilities</span>
+        <span class="rail-badge" id="badge-vulns" style="display:none;">0</span>
+      </button>
 
-      <div class="nav-item" id="nav-copilot" data-section="copilot" role="button" tabindex="0" aria-label="AI Copilot">
-        <span class="nav-icon">🤖</span>
-        <span class="nav-label">AI Copilot</span>
-      </div>
+      <!-- 6. GitHub Correlation -->
+      <button class="rail-item" data-view="github" title="GitHub Issues & PR Remediation">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" y1="9" x2="6" y2="21"></line></svg>
+        <span class="rail-label">GitHub Intelligence</span>
+      </button>
 
-      <div class="nav-item" id="nav-mcp" data-section="mcp" role="button" tabindex="0" aria-label="MCP Inspector">
-        <span class="nav-icon">🔧</span>
-        <span class="nav-label">MCP Inspector</span>
-      </div>
+      <!-- 7. Commit Security Lookup -->
+      <button class="rail-item" data-view="commit" title="Git Commit Hash Security">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"></circle><line x1="1.05" y1="12" x2="7" y2="12"></line><line x1="17.01" y1="12" x2="22.96" y2="12"></line></svg>
+        <span class="rail-label">Commit Security</span>
+      </button>
 
-      <div class="nav-item" id="nav-trace" data-count="0" data-section="trace" role="button" tabindex="0" aria-label="Execution Trace">
-        <span class="nav-icon">📋</span>
-        <span class="nav-label">Execution Trace</span>
-      </div>
+      <!-- 8. AI Copilot -->
+      <button class="rail-item" data-view="copilot" title="AI Security Copilot">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg>
+        <span class="rail-label">AI Copilot</span>
+      </button>
 
-      <div class="nav-item" id="nav-history" data-section="history" role="button" tabindex="0" aria-label="Scan History">
-        <span class="nav-icon">📜</span>
-        <span class="nav-label">Scan History</span>
-      </div>
+      <!-- 9. MCP Inspector -->
+      <button class="rail-item" data-view="mcp" title="Synapse MCP Tool Registry">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+        <span class="rail-label">MCP Inspector</span>
+      </button>
 
+      <!-- 10. Activity / Audit -->
+      <button class="rail-item" data-view="activity" title="Scan History & Audit Traces">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        <span class="rail-label">Activity</span>
+      </button>
     </div>
 
-    <div class="sidebar-footer">
-      RepoSentinel AI &copy; 2025<br>
-      <small class="text-muted">Ctrl+K to scan</small>
+    <!-- Rail Footer -->
+    <div class="rail-footer">
+      <button class="rail-item" data-view="settings" title="Settings & Preferences">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        <span class="rail-label">Settings</span>
+      </button>
     </div>
-  </nav>
+  </aside>
 
-  <!-- ── MAIN CONTENT ────────────────────────────────────── -->
-  <main class="main-content" id="main-content">
+  <!-- ── MAIN CONTENT WORKSPACE ───────────────────────────── -->
+  <main class="main-workspace" id="main-workspace">
 
-    <!-- ════════════════════════════════════════════════════
-         SECTION: Repository Scan
-    ════════════════════════════════════════════════════ -->
-    <section class="section active" id="section-scan" aria-labelledby="scan-title">
-
-      <div class="section-header">
-        <div>
-          <h1 class="section-title" id="scan-title">🔍 Repository Scan</h1>
-          <div class="section-subtitle">Scan any public GitHub repository for known vulnerabilities</div>
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 1: PUBLIC LANDING PAGE
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-landing" style="display:none;">
+      <div class="landing-hero">
+        <div class="landing-badge">Enterprise Cross-System Security Copilot</div>
+        <h1 class="landing-title">Automated Repository Security Intelligence</h1>
+        <p class="landing-subtitle">
+          RepoSentinel AI bridges the gap between <strong>GitHub</strong> codebases and <strong>OSV.dev</strong> vulnerability advisories via genuine Synapse-generated MCP servers and AI reasoning.
+        </p>
+        <div class="landing-actions">
+          <button class="btn btn-primary btn-lg" id="btn-landing-get-started">Get Started</button>
+          <button class="btn btn-outline btn-lg" id="btn-landing-demo">Explore Security Dashboard</button>
         </div>
       </div>
 
-      <!-- Repo input form -->
-      <div class="repo-input-form">
-        <h2>Analyze a Repository</h2>
-        <form id="scan-form" autocomplete="off" novalidate>
-          <div class="repo-input-row">
-            <input
-              type="text"
-              id="repo-input"
-              class="repo-input"
-              placeholder="owner/repository  (e.g. psf/requests)"
-              aria-label="GitHub repository to scan"
-              spellcheck="false"
-              required
-            >
-            <button type="submit" class="btn btn-primary" id="btn-scan">
-              🔬 Scan Repository
+      <!-- Architecture Card Flow -->
+      <div class="landing-section">
+        <h2 class="section-title text-center">Track 3: A Copilot Across Two Independent Systems</h2>
+        <p class="section-desc text-center">Zero synthetic scans. Every metric originates directly from live GitHub, OSV, and PyPI APIs.</p>
+        
+        <div class="architecture-flow-grid">
+          <div class="arch-box">
+            <div class="arch-box-icon">🐙</div>
+            <div class="arch-box-title">System A: GitHub Service</div>
+            <div class="arch-box-port">Port 8001 · FastAPI</div>
+            <p>Parses lockfiles (<code>uv.lock</code>, <code>poetry.lock</code>, <code>requirements.txt</code>), issues, PRs, and commit history.</p>
+          </div>
+          <div class="arch-arrow">
+            <span class="arrow-label">Synapse MCP stdio</span>
+            <span class="arrow-symbol">⇄</span>
+          </div>
+          <div class="arch-box featured">
+            <div class="arch-box-icon">🧠</div>
+            <div class="arch-box-title">Copilot Gateway & Agent</div>
+            <div class="arch-box-port">Port 8000 · FastAPI</div>
+            <p>Orchestrates multi-turn MCP tool calls via Groq & Gemini with automatic token rate-limit fallback.</p>
+          </div>
+          <div class="arch-arrow">
+            <span class="arrow-label">Synapse MCP stdio</span>
+            <span class="arrow-symbol">⇄</span>
+          </div>
+          <div class="arch-box">
+            <div class="arch-box-icon">🛡️</div>
+            <div class="arch-box-title">System B: OSV Service</div>
+            <div class="arch-box-port">Port 8002 · FastAPI</div>
+            <p>Queries global vulnerability advisories by exact pinned package version and 40/64-char Git commit SHA.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Discovery Demo Highlight -->
+      <div class="landing-card-highlight">
+        <div class="highlight-content">
+          <div class="highlight-tag">Hackathon Track 3 Core Requirement</div>
+          <h3>Dynamic Endpoint Addition & Synapse <code>--discover</code></h3>
+          <p>
+            Demonstrating runtime capability expansion: add <code>GET /registry/pypi/{pkg}/latest-release</code> live, run <code>synapse build --discover</code>, and observe the AI Copilot immediately route queries to the newly discovered PyPI tool.
+          </p>
+        </div>
+        <div class="highlight-actions">
+          <button class="btn btn-outline" id="btn-landing-to-mcp">View MCP Tools</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 2: AUTHENTICATED USER HOME
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-home" style="display:none;">
+      <div class="home-welcome-banner">
+        <div class="welcome-text">
+          <h1 id="home-welcome-name">Welcome back</h1>
+          <p>Here is your repository security posture across all connected systems.</p>
+        </div>
+        <div class="welcome-actions">
+          <button class="btn btn-primary" id="btn-home-add-project">+ Onboard Repository</button>
+          <button class="btn btn-outline" id="btn-home-to-dashboard">View Dashboard</button>
+        </div>
+      </div>
+
+      <!-- Quick Scan Box -->
+      <div class="card p-4 mb-4">
+        <h3 class="card-heading mb-2">⚡ Quick Repository Scan</h3>
+        <p class="text-muted text-sm mb-3">Scan any public GitHub repository instantly across both GitHub and OSV systems.</p>
+        <div class="scan-input-group">
+          <input type="text" id="home-scan-input" class="form-input" placeholder="e.g. pallets/flask or https://github.com/openai/openai-agents-python">
+          <button class="btn btn-primary" id="btn-home-scan-run">Scan Repository</button>
+        </div>
+      </div>
+
+      <!-- Grid: Recent Projects + Activity -->
+      <div class="grid-2-col">
+        <div class="card p-4">
+          <div class="card-header-row mb-3">
+            <h3 class="card-heading">Tracked Projects</h3>
+            <button class="btn btn-link btn-sm" id="btn-home-all-projects">View all</button>
+          </div>
+          <div class="projects-mini-list" id="home-projects-list">
+            <div class="empty-state-sm">No onboarded projects yet. Click "+ Onboard Repository" to track one.</div>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <div class="card-header-row mb-3">
+            <h3 class="card-heading">Recent Security Scans</h3>
+            <button class="btn btn-link btn-sm" id="btn-home-all-scans">View history</button>
+          </div>
+          <div class="scans-mini-list" id="home-scans-list">
+            <div class="empty-state-sm">No recent scans recorded.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 3: SECURITY DASHBOARD (THE MOOLE LAYOUT — Reference Screenshot)
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-dashboard">
+      <!-- Breadcrumb Bar + Top Onboarded Count -->
+      <div class="dashboard-breadcrumb-bar">
+        <div class="breadcrumbs">
+          <span class="bc-item" id="bc-home-link">Home</span>
+          <span class="bc-sep">&gt;</span>
+          <span class="bc-item" id="bc-proj-link">Project</span>
+          <span class="bc-sep">&gt;</span>
+          <span class="bc-item current">Dashboard</span>
+        </div>
+        <div class="onboarded-pill" id="dashboard-onboarded-pill">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+          <span id="dashboard-onboarded-text">Total onboarded repositories: 0</span>
+        </div>
+      </div>
+
+      <!-- 4 Severity Cards + Donut Chart (Moole Architecture) -->
+      <div class="severity-analytics-container">
+        <!-- Severity Cards Row -->
+        <div class="severity-cards-row">
+          <!-- Critical Card -->
+          <div class="moole-sev-card critical" data-severity="critical">
+            <div class="sev-card-icon-wrap">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            </div>
+            <div class="sev-card-info">
+              <div class="sev-card-label">Critical</div>
+              <div class="sev-card-total" id="dash-crit-count">Total: 0</div>
+            </div>
+          </div>
+
+          <!-- High Card -->
+          <div class="moole-sev-card high" data-severity="high">
+            <div class="sev-card-icon-wrap">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            </div>
+            <div class="sev-card-info">
+              <div class="sev-card-label">High</div>
+              <div class="sev-card-total" id="dash-high-count">Total: 0</div>
+            </div>
+          </div>
+
+          <!-- Medium Card -->
+          <div class="moole-sev-card medium" data-severity="medium">
+            <div class="sev-card-icon-wrap">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            </div>
+            <div class="sev-card-info">
+              <div class="sev-card-label">Medium</div>
+              <div class="sev-card-total" id="dash-med-count">Total: 0</div>
+            </div>
+          </div>
+
+          <!-- Low Card -->
+          <div class="moole-sev-card low" data-severity="low">
+            <div class="sev-card-icon-wrap">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+            </div>
+            <div class="sev-card-info">
+              <div class="sev-card-label">Low</div>
+              <div class="sev-card-total" id="dash-low-count">Total: 0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Donut Chart & Legend -->
+        <div class="donut-chart-card">
+          <div class="donut-svg-wrapper">
+            <svg id="donut-svg" width="130" height="130" viewBox="0 0 42 42" class="donut-chart">
+              <!-- Slices dynamically injected -->
+              <circle class="donut-ring" cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#1e293b" stroke-width="6"></circle>
+            </svg>
+            <div class="donut-center-text">
+              <span id="donut-total-vulns">0</span>
+              <small>Total</small>
+            </div>
+          </div>
+          <div class="donut-legend">
+            <div class="legend-item"><span class="legend-dot critical"></span> Critical</div>
+            <div class="legend-item"><span class="legend-dot high"></span> High</div>
+            <div class="legend-item"><span class="legend-dot medium"></span> Medium</div>
+            <div class="legend-item"><span class="legend-dot low"></span> Low</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Repositories Management Table (Moole Inspired) -->
+      <div class="repositories-table-card">
+        <div class="table-card-header">
+          <div class="header-title-group">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+            <h3>Repositories</h3>
+          </div>
+          <div class="header-filters-group">
+            <button class="filter-icon-btn" id="table-filter-btn" title="Filter by Severity">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
             </button>
-          </div>
-          <div class="repo-input-hint">
-            Enter a GitHub repository in <code>owner/repo</code> format, or paste the full GitHub URL.
-            Press <kbd>Ctrl+K</kbd> to focus this input from anywhere.
-          </div>
-        </form>
-      </div>
-
-      <!-- Scan progress -->
-      <div class="scan-progress" id="scan-progress">
-        <div class="d-flex align-center gap-8 mb-16">
-          <div class="loading-spinner"></div>
-          <strong>Scanning repository…</strong>
-        </div>
-        <div class="progress-bar-wrap">
-          <div class="progress-bar indeterminate"></div>
-        </div>
-        <div class="progress-steps">
-          <div class="progress-step" id="step-fetch">
-            <span class="progress-step-icon">○</span> Fetching dependency manifest
-          </div>
-          <div class="progress-step" id="step-osv">
-            <span class="progress-step-icon">○</span> Querying OSV vulnerability database
-          </div>
-          <div class="progress-step" id="step-gh">
-            <span class="progress-step-icon">○</span> Correlating GitHub issues & PRs
+            <div class="table-search-box">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="text" id="dash-repo-search" placeholder="Search Repositories...">
+            </div>
+            <button class="btn btn-sm btn-primary" id="btn-dash-add-repo">+ Add Repository</button>
           </div>
         </div>
-      </div>
 
-      <!-- Scan result header (hidden until scan completes) -->
-      <div class="scan-result-header hidden" id="scan-result-header" aria-live="polite">
-        <!-- Filled by JS -->
-      </div>
-
-      <!-- Security overview stat cards -->
-      <div class="stat-grid" id="stat-grid-overview" aria-label="Security statistics">
-        <!-- Empty state before first scan -->
-        <div class="panel" style="grid-column:1/-1;padding:0;">
-          <div class="empty-state">
-            <div class="empty-state-icon">🔍</div>
-            <div class="empty-state-title">No scan results yet</div>
-            <div class="empty-state-desc">Enter a repository above and click <strong>Scan Repository</strong> to run a security analysis.</div>
-          </div>
+        <div class="table-responsive">
+          <table class="moole-table" id="dashboard-repos-table">
+            <thead>
+              <tr>
+                <th>Repository</th>
+                <th class="text-center text-critical">Critical</th>
+                <th class="text-center text-high">High</th>
+                <th class="text-center text-medium">Medium</th>
+                <th class="text-center text-low">Low</th>
+                <th>Build File</th>
+                <th>Integration</th>
+                <th>Last Scan</th>
+                <th class="text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="dashboard-repos-tbody">
+              <!-- Dynamically populated from actual scan/project records -->
+              <tr>
+                <td colspan="9" class="text-center py-4 text-muted">
+                  Loading repository security records...
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
-
-      <!-- Vulnerability table (scan view) -->
-      <div class="panel" id="panel-vuln-scan" style="display:none;">
-        <div class="panel-header">
-          <span class="panel-title">🛡️ Vulnerabilities Detected</span>
-        </div>
-        <div id="vuln-table-scan">
-          <!-- Filled by JS -->
-        </div>
-      </div>
-
     </section>
 
-    <!-- ════════════════════════════════════════════════════
-         SECTION: Vulnerabilities (full table)
-    ════════════════════════════════════════════════════ -->
-    <section class="section" id="section-vulnerabilities" aria-labelledby="vuln-title">
-
-      <div class="section-header">
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 4: PROJECTS MANAGEMENT PAGE
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-projects" style="display:none;">
+      <div class="page-header-row mb-4">
         <div>
-          <h1 class="section-title" id="vuln-title">🛡️ Vulnerabilities</h1>
-          <div class="section-subtitle">Full vulnerability report with sorting and filtering</div>
+          <h2 class="page-title">Onboarded Projects</h2>
+          <p class="page-desc">Track and audit your GitHub repositories with real-time dependency manifests and commit tracking.</p>
         </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-header">
-          <span class="panel-title">All Detected Vulnerabilities</span>
-        </div>
-        <div id="vuln-table-vulns">
-          <div class="empty-state">
-            <div class="empty-state-icon">🛡️</div>
-            <div class="empty-state-title">No vulnerability data</div>
-            <div class="empty-state-desc">Scan a repository from the <strong>Repository Scan</strong> section to populate this table.</div>
-          </div>
-        </div>
-      </div>
-
-    </section>
-
-    <!-- ════════════════════════════════════════════════════
-         SECTION: GitHub Correlation
-    ════════════════════════════════════════════════════ -->
-    <section class="section" id="section-github" aria-labelledby="gh-title">
-
-      <div class="section-header">
         <div>
-          <h1 class="section-title" id="gh-title">🐙 GitHub Correlation</h1>
-          <div class="section-subtitle">Issues and pull requests related to detected vulnerabilities</div>
+          <button class="btn btn-primary" id="btn-projects-add-modal">+ Onboard New Repository</button>
         </div>
       </div>
 
-      <div id="github-cards">
+      <div class="projects-grid" id="projects-grid-container">
+        <!-- Dynamically rendered project cards -->
         <div class="empty-state">
-          <div class="empty-state-icon">🐙</div>
-          <div class="empty-state-title">No GitHub data</div>
-          <div class="empty-state-desc">GitHub issues and PRs will appear here after you run a scan.</div>
+          <h3>No Projects Onboarded</h3>
+          <p>Add your first repository to automatically track vulnerabilities and remediation pull requests.</p>
+          <button class="btn btn-primary mt-3" id="btn-empty-add-project">+ Add Repository</button>
         </div>
       </div>
-
     </section>
 
-    <!-- ════════════════════════════════════════════════════
-         SECTION: Commit Security Lookup
-    ════════════════════════════════════════════════════ -->
-    <section class="section" id="section-commit" aria-labelledby="commit-title">
-
-      <div class="section-header">
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 5: VULNERABILITIES FINDINGS
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-vulnerabilities" style="display:none;">
+      <div class="page-header-row mb-3">
         <div>
-          <h1 class="section-title" id="commit-title">🔎 Commit Security Lookup</h1>
-          <div class="section-subtitle">Query OSV.dev by exact Git commit SHA or inspect a repository's latest commit via MCP</div>
+          <h2 class="page-title">Vulnerability Intelligence</h2>
+          <p class="page-desc">Direct findings from <code>https://api.osv.dev</code> mapped to repository dependencies.</p>
+        </div>
+        <div class="vuln-filters-row">
+          <input type="text" id="vuln-search-input" class="form-input form-input-sm" placeholder="Filter by package or CVE...">
         </div>
       </div>
 
-      <div class="repo-input-form">
-        <h2>Check Commit Against OSV.dev</h2>
-        <form id="commit-form" autocomplete="off" novalidate>
-          <div class="repo-input-row" style="margin-bottom:10px;">
-            <input
-              type="text"
-              id="commit-repo-input"
-              class="repo-input"
-              placeholder="GitHub owner/repository (optional if SHA provided)"
-              aria-label="GitHub repository context"
-              spellcheck="false"
-            >
-            <input
-              type="text"
-              id="commit-sha-input"
-              class="repo-input"
-              placeholder="Optional full 40/64-char Git commit SHA"
-              aria-label="Full Git commit SHA"
-              spellcheck="false"
-            >
-            <button type="submit" class="btn btn-primary" id="btn-check-commit">
-              🔎 Check Commit
+      <div class="card p-0">
+        <div class="table-responsive">
+          <table class="moole-table" id="vulns-findings-table">
+            <thead>
+              <tr>
+                <th>Package</th>
+                <th>Installed Version</th>
+                <th>Vulnerability ID</th>
+                <th>Severity</th>
+                <th>Affected Range</th>
+                <th>Fixed Version</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody id="vulns-findings-tbody">
+              <tr>
+                <td colspan="7" class="text-center py-4 text-muted">No scan performed yet. Select a repository to scan.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 6: GITHUB CORRELATION & REMEDIATION
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-github" style="display:none;">
+      <div class="page-header-row mb-3">
+        <div>
+          <h2 class="page-title">GitHub Remediation Correlation</h2>
+          <p class="page-desc">Cross-system analysis matching open issues and pull requests to detected CVEs.</p>
+        </div>
+      </div>
+
+      <div class="correlation-cards-grid" id="github-correlation-grid">
+        <div class="empty-state">
+          <h3>No Correlation Available</h3>
+          <p>Run a repository scan to cross-reference GitHub issues and open remediation pull requests.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 7: COMMIT SECURITY LOOKUP
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-commit" style="display:none;">
+      <div class="page-header-row mb-3">
+        <div>
+          <h2 class="page-title">Commit Hash Vulnerability Lookup</h2>
+          <p class="page-desc">Query OSV.dev directly by 40- or 64-character Git commit SHA via Synapse MCP.</p>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <div class="grid-2-col">
+          <div>
+            <label class="form-label">Repository Context (Optional)</label>
+            <input type="text" id="commit-repo-input" class="form-input" placeholder="owner/repo (e.g. pallets/flask)">
+          </div>
+          <div>
+            <label class="form-label">Commit SHA (Leave blank to fetch latest via GitHub MCP)</label>
+            <input type="text" id="commit-sha-input" class="form-input" placeholder="40-hex SHA or blank for latest">
+          </div>
+        </div>
+        <div class="mt-3">
+          <button class="btn btn-primary" id="btn-run-commit-check">Query Commit Security</button>
+        </div>
+      </div>
+
+      <div id="commit-results-area" style="display:none;">
+        <div class="card p-4" id="commit-results-card">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 8: AI COPILOT INTERACTION
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-copilot" style="display:none;">
+      <div class="copilot-page-layout">
+        <div class="copilot-chat-card">
+          <div class="chat-header">
+            <div class="chat-title-group">
+              <span class="chat-dot"></span>
+              <h3>RepoSentinel Copilot</h3>
+              <span class="chat-model-tag" id="copilot-active-model">Groq Orchestration + Gemini Synthesis</span>
+            </div>
+            <button class="btn btn-xs btn-outline" id="btn-clear-chat">Clear Conversation</button>
+          </div>
+
+          <div class="chat-messages-scroll" id="copilot-messages-container">
+            <div class="chat-bubble assistant">
+              <div class="bubble-header">RepoSentinel Copilot</div>
+              <div class="bubble-content">
+                Hello! I am your cross-system security copilot. I can query repository dependencies and commit history on GitHub, cross-reference OSV.dev vulnerability records, inspect open remediation pull requests, and verify the latest PyPI releases through Synapse MCP tools.
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-input-bar">
+            <textarea id="copilot-input" class="chat-textarea" rows="2" placeholder="Ask about vulnerabilities, remediation PRs, or commit security... (Press Enter to send)"></textarea>
+            <button class="btn btn-primary" id="btn-copilot-send">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
             </button>
           </div>
-          <div class="repo-input-hint">
-            Leave the commit SHA blank to fetch the repository's real latest commit via GitHub MCP and query OSV.dev, or paste an exact 40/64-char hex commit SHA.
-          </div>
-        </form>
-      </div>
-
-      <div class="panel" id="commit-result-panel">
-        <div class="panel-header">
-          <span class="panel-title">Commit Lookup Result</span>
-        </div>
-        <div id="commit-result-container">
-          <div class="empty-state">
-            <div class="empty-state-icon">🔎</div>
-            <div class="empty-state-title">No commit checked yet</div>
-            <div class="empty-state-desc">Enter a repository or full commit SHA above and click <strong>Check Commit</strong>.</div>
-          </div>
         </div>
       </div>
-
     </section>
 
-    <!-- ════════════════════════════════════════════════════
-         SECTION: AI Copilot
-    ════════════════════════════════════════════════════ -->
-    <section class="section" id="section-copilot" aria-labelledby="chat-title">
-
-      <div class="section-header">
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 9: MCP INSPECTOR
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-mcp" style="display:none;">
+      <div class="page-header-row mb-4">
         <div>
-          <h1 class="section-title" id="chat-title">🤖 AI Copilot</h1>
-          <div class="section-subtitle">Ask questions about your repository's security posture</div>
+          <h2 class="page-title">Synapse MCP Tool Registry</h2>
+          <p class="page-desc">Inspecting dynamically discovered tools from <code>github_service</code> and <code>osv_service</code>.</p>
         </div>
-      </div>
-
-      <div class="chat-container" role="log" aria-label="AI Copilot chat">
-
-        <!-- Toolbar -->
-        <div class="chat-toolbar">
-          <span class="chat-context-info" id="chat-context-label">
-            💡 Tip: Run a scan first so the copilot has context about your repository.
-          </span>
-        </div>
-
-        <!-- Chat history -->
-        <div class="chat-history" id="chat-history" aria-live="polite">
-          <div class="empty-state">
-            <div class="empty-state-icon">🤖</div>
-            <div class="empty-state-title">Start a conversation</div>
-            <div class="empty-state-desc">Ask anything about your repository's dependencies, vulnerabilities, or remediation steps.</div>
-          </div>
-        </div>
-
-        <!-- Chat input -->
-        <form id="chat-form" class="chat-input-row" autocomplete="off">
-          <textarea
-            id="chat-input"
-            class="chat-input"
-            placeholder="Ask about vulnerabilities, dependencies, or remediation… (Enter to send, Shift+Enter for newline)"
-            rows="1"
-            aria-label="Chat message"
-          ></textarea>
-          <button type="submit" class="btn btn-primary" aria-label="Send message">
-            ➤ Send
-          </button>
-        </form>
-
-      </div>
-
-    </section>
-
-    <!-- ════════════════════════════════════════════════════
-         SECTION: MCP Inspector
-    ════════════════════════════════════════════════════ -->
-    <section class="section" id="section-mcp" aria-labelledby="mcp-title">
-
-      <div class="section-header">
         <div>
-          <h1 class="section-title" id="mcp-title">🔧 MCP Inspector</h1>
-          <div class="section-subtitle">Model Context Protocol server and tool status</div>
-        </div>
-        <div class="ml-auto">
-          <button class="btn btn-secondary" id="btn-refresh-tools">⟳ Refresh Tools</button>
+          <button class="btn btn-primary" id="btn-mcp-refresh">↻ Refresh Tool Registry</button>
         </div>
       </div>
 
-      <!-- MCP server status cards -->
-      <div class="panel">
-        <div class="panel-header">
-          <span class="panel-title">Connected MCP Servers</span>
-        </div>
-        <div class="server-cards" id="mcp-server-cards">
-          <div class="inline-loader">
-            <div class="loading-spinner"></div>
-            Loading servers…
+      <div class="mcp-servers-grid mb-4">
+        <div class="card p-3">
+          <div class="card-header-row">
+            <h4>System A: GitHub Service MCP</h4>
+            <span class="status-badge ok" id="mcp-gh-status">CONNECTED</span>
           </div>
+          <p class="text-sm text-muted">Exposes repository metadata, dependencies, issues, PRs, and commit history.</p>
         </div>
-      </div>
 
-      <!-- MCP tool grid -->
-      <div class="panel">
-        <div class="panel-header">
-          <span class="panel-title">Available Tools</span>
-        </div>
-        <div class="tool-cards" id="mcp-tool-cards">
-          <div class="inline-loader">
-            <div class="loading-spinner"></div>
-            Loading tools…
+        <div class="card p-3">
+          <div class="card-header-row">
+            <h4>System B: OSV Service MCP</h4>
+            <span class="status-badge ok" id="mcp-osv-status">CONNECTED</span>
           </div>
+          <p class="text-sm text-muted">Exposes batch vulnerability queries, commit queries, advisories, and PyPI releases.</p>
         </div>
       </div>
 
+      <div class="mcp-tools-grid" id="mcp-tools-list">
+        <!-- Dynamically rendered tool cards -->
+      </div>
     </section>
 
-    <!-- ════════════════════════════════════════════════════
-         SECTION: Execution Trace
-    ════════════════════════════════════════════════════ -->
-    <section class="section" id="section-trace" aria-labelledby="trace-title">
-
-      <div class="section-header">
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 10: ACTIVITY & SCAN HISTORY
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-activity" style="display:none;">
+      <div class="page-header-row mb-3">
         <div>
-          <h1 class="section-title" id="trace-title">📋 Execution Trace</h1>
-          <div class="section-subtitle">Step-by-step log of MCP tool calls and results</div>
+          <h2 class="page-title">Scan History & Audit Trail</h2>
+          <p class="page-desc">Complete immutable record of all security scans and MCP tool calls.</p>
         </div>
       </div>
 
-      <div class="panel">
-        <div class="panel-header">
-          <span class="panel-title">Tool Call Timeline</span>
-        </div>
-        <div class="trace-list" id="trace-list">
-          <div class="empty-state">
-            <div class="empty-state-icon">📋</div>
-            <div class="empty-state-title">No trace data yet</div>
-            <div class="empty-state-desc">Execution traces appear here after scans or copilot queries are run.</div>
-          </div>
+      <div class="card p-0">
+        <div class="table-responsive">
+          <table class="moole-table" id="activity-table">
+            <thead>
+              <tr>
+                <th>Scan ID</th>
+                <th>Target Repository</th>
+                <th>Status</th>
+                <th>Dependencies</th>
+                <th>Vulnerabilities</th>
+                <th>Critical</th>
+                <th>Duration</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id="activity-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
         </div>
       </div>
-
     </section>
 
-    <!-- ════════════════════════════════════════════════════
-         SECTION: Scan History
-    ════════════════════════════════════════════════════ -->
-    <section class="section" id="section-history" aria-labelledby="history-title">
-
-      <div class="section-header">
+    <!-- ──────────────────────────────────────────────────────────
+         VIEW 11: SETTINGS
+    ────────────────────────────────────────────────────────── -->
+    <section class="page-view" id="view-settings" style="display:none;">
+      <div class="page-header-row mb-4">
         <div>
-          <h1 class="section-title" id="history-title">📜 Scan History</h1>
-          <div class="section-subtitle">Previously scanned repositories — click any row to reload results</div>
+          <h2 class="page-title">Account & Platform Settings</h2>
+          <p class="page-desc">Manage your profile, authentication credentials, and platform preferences.</p>
         </div>
       </div>
 
-      <div class="panel" style="padding:0;overflow:hidden;">
-        <div id="history-container">
-          <div class="inline-loader" style="padding:30px 20px;">
-            <div class="loading-spinner"></div>
-            Loading history…
+      <div class="grid-2-col">
+        <div class="card p-4">
+          <h3 class="card-heading mb-3">Profile Information</h3>
+          <div class="form-group mb-3">
+            <label class="form-label">Username</label>
+            <input type="text" id="settings-username" class="form-input" readonly>
+          </div>
+          <div class="form-group mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" id="settings-email" class="form-input" readonly>
+          </div>
+          <div class="form-group mb-3">
+            <label class="form-label">Account Created</label>
+            <input type="text" id="settings-created" class="form-input" readonly>
           </div>
         </div>
-      </div>
 
+        <div class="card p-4">
+          <h3 class="card-heading mb-3">Security & Session</h3>
+          <p class="text-sm text-muted mb-4">Passkeys and passwords are hashed locally using Argon2id with cryptographically random session tokens.</p>
+          <button class="btn btn-danger" id="btn-settings-logout">Sign Out of All Sessions</button>
+        </div>
+      </div>
     </section>
 
-  </main><!-- /main-content -->
-</div><!-- /app-shell -->
+  </main>
+</div>
 
-<script src="app.js"></script>
+<!-- ══════════════════════════════════════════════════════════
+     MODALS: AUTHENTICATION & ONBOARDING
+══════════════════════════════════════════════════════════ -->
 
-<!-- Progressive enhancement: show/hide panel after scan -->
-<script>
-  // Show vuln panel only once results are rendered
-  const panelObserver = new MutationObserver(() => {
-    const vulnTable = document.getElementById('vuln-table-scan');
-    const panel = document.getElementById('panel-vuln-scan');
-    if (!panel) return;
-    if (vulnTable?.querySelector('table, .empty-state')) {
-      panel.style.display = '';
-    }
-  });
-  const target = document.getElementById('vuln-table-scan');
-  if (target) panelObserver.observe(target, { childList: true, subtree: false });
+<!-- Auth Modal (Sign In / Register) -->
+<div class="modal-overlay" id="auth-modal" style="display:none;">
+  <div class="modal-box">
+    <button class="modal-close-btn" id="modal-auth-close">&times;</button>
+    <div class="modal-tabs">
+      <button class="modal-tab-btn active" id="tab-login-btn">Sign In</button>
+      <button class="modal-tab-btn" id="tab-register-btn">Create Account</button>
+    </div>
 
-  // Update chat context label after scan
-  const origScanRepo = window.scanRepo;
-  // We update the label post-scan via MutationObserver on stat-grid
-  const statObserver = new MutationObserver(() => {
-    const label = document.getElementById('chat-context-label');
-    const repoEl = document.querySelector('.scan-repo-name');
-    if (label && repoEl) {
-      label.textContent = `🎯 Context: ${repoEl.textContent.replace('📦 ', '')}`;
-    }
-  });
-  const statGrid = document.getElementById('stat-grid-overview');
-  if (statGrid) statObserver.observe(statGrid, { childList: true });
-</script>
+    <!-- Login Form -->
+    <form id="form-login" class="auth-form">
+      <div class="form-group mb-3">
+        <label class="form-label">Username or Email</label>
+        <input type="text" id="login-id" class="form-input" required autocomplete="username" placeholder="analyst or analyst@domain.com">
+      </div>
+      <div class="form-group mb-4">
+        <label class="form-label">Password</label>
+        <input type="password" id="login-pwd" class="form-input" required autocomplete="current-password" placeholder="••••••••">
+      </div>
+      <div class="auth-error-msg" id="login-error-msg" style="display:none;"></div>
+      <button type="submit" class="btn btn-primary w-100" id="btn-submit-login">Sign In</button>
+    </form>
 
+    <!-- Register Form -->
+    <form id="form-register" class="auth-form" style="display:none;">
+      <div class="form-group mb-3">
+        <label class="form-label">Full Name</label>
+        <input type="text" id="reg-name" class="form-input" placeholder="Security Analyst">
+      </div>
+      <div class="form-group mb-3">
+        <label class="form-label">Username</label>
+        <input type="text" id="reg-username" class="form-input" required placeholder="analyst">
+      </div>
+      <div class="form-group mb-3">
+        <label class="form-label">Email Address</label>
+        <input type="email" id="reg-email" class="form-input" required placeholder="analyst@domain.com">
+      </div>
+      <div class="form-group mb-4">
+        <label class="form-label">Password (min 8 characters)</label>
+        <input type="password" id="reg-pwd" class="form-input" minlength="8" required placeholder="••••••••">
+      </div>
+      <div class="auth-error-msg" id="reg-error-msg" style="display:none;"></div>
+      <button type="submit" class="btn btn-primary w-100" id="btn-submit-register">Create Account</button>
+    </form>
+  </div>
+</div>
+
+<!-- Onboard Project Modal -->
+<div class="modal-overlay" id="add-project-modal" style="display:none;">
+  <div class="modal-box">
+    <button class="modal-close-btn" id="modal-project-close">&times;</button>
+    <h3 class="modal-title mb-2">Onboard GitHub Repository</h3>
+    <p class="text-sm text-muted mb-4">Enter a public or authenticated GitHub repository slug to verify and onboard.</p>
+
+    <form id="form-add-project">
+      <div class="form-group mb-4">
+        <label class="form-label">Repository Slug or URL</label>
+        <input type="text" id="project-repo-input" class="form-input" placeholder="pallets/flask or https://github.com/..." required>
+        <small class="text-muted text-xs mt-1 block">RepoSentinel will verify repository existence via the live GitHub REST API.</small>
+      </div>
+      <div class="auth-error-msg" id="project-error-msg" style="display:none;"></div>
+      <div class="modal-actions-row">
+        <button type="button" class="btn btn-outline" id="btn-cancel-project">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btn-submit-project">Verify & Onboard</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
 </body>
 </html>

@@ -1,1093 +1,1087 @@
 /**
- * RepoSentinel AI — Frontend Application
- * Vanilla ES2022, no frameworks, no CDN dependencies.
+ * RepoSentinel AI — Enterprise Security Platform
+ * Moole-Inspired Layout & Interactions (Vanilla ES2022)
  */
 
 'use strict';
 
-// ── API base (same-origin) ─────────────────────────────────
-const API = '';
-
-// ── Global state ──────────────────────────────────────────
+// ── Global Application State ────────────────────────────────
 const state = {
-  currentRepo:  null,   // { owner, repo }
-  currentScan:  null,   // scan record
-  mcpTools:     [],
-  scanResults:  null,
-  history:      [],
-  liveState:    null,
-  chatContext:  null,   // { owner, repo } set after a scan
-  refreshTimer: null,
+  currentUser: null,
+  activeView: 'dashboard',
+  projects: [],
+  selectedProjectId: 'all',
+  dashboardData: null,
+  currentScan: null,
+  mcpTools: [],
+  history: [],
+  liveState: null,
+  isRailExpanded: false,
 };
 
-// ── Entry point ────────────────────────────────────────────
-async function init() {
+// ── Entry Point ─────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
-  showSection('scan');
+  setupHashRouting();
 
-  // Load everything in parallel
+  // Load user session first
+  await checkAuthSession();
+
+  // Load platform data in parallel
   await Promise.allSettled([
+    loadDashboardOverview(),
+    loadProjects(),
     loadLiveState(),
     loadMCPTools(),
-    loadHistory(),
+    loadScanHistory(),
   ]);
 
-  // Auto-refresh live state every 15 s
-  state.refreshTimer = setInterval(loadLiveState, 15_000);
-}
+  // Periodic health polling (every 20s)
+  setInterval(loadLiveState, 20_000);
+});
 
-// ═══════════════════════════════════════════════════════════
-// API helpers
-// ═══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
+// API Client Helper
+// ════════════════════════════════════════════════════════════
 
 async function apiFetch(path, options = {}) {
-  const url = `${API}${path}`;
-  const res = await fetch(url, {
+  const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
     ...options,
   });
+
   if (!res.ok) {
-    let msg = `API error ${res.status}`;
+    let msg = `Request failed (HTTP ${res.status})`;
     try {
-      const j = await res.json();
-      const raw = j.detail ?? j.error ?? j.message;
+      const data = await res.json();
+      const raw = data.detail ?? data.error ?? data.message;
       if (typeof raw === 'string') msg = raw;
       else if (raw && typeof raw === 'object') msg = raw.error ?? raw.message ?? JSON.stringify(raw);
     } catch {}
     throw new Error(msg);
   }
-  return res.json();
+
+  // Handle empty 204 or non-JSON
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return res.json();
+  }
+  return res.text();
 }
 
-// ═══════════════════════════════════════════════════════════
-// Core features
-// ═══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
+// Navigation & View Routing
+// ════════════════════════════════════════════════════════════
 
-/** POST /api/scan – run a full repository security scan */
-async function scanRepo(owner, repo) {
-  showLoading(true);
-  clearScanUI();
+function setupEventListeners() {
+  // Rail toggle
+  document.getElementById('rail-toggle-btn')?.addEventListener('click', toggleRail);
 
-  const progressEl = document.getElementById('scan-progress');
-  progressEl?.classList.add('active');
-  setProgressStep('step-fetch', 'active');
+  // Rail item clicks
+  document.querySelectorAll('.rail-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.dataset.view;
+      if (view) switchView(view);
+    });
+  });
+
+  // Header Brand click -> Home or Dashboard
+  document.getElementById('brand-home-link')?.addEventListener('click', () => {
+    switchView(state.currentUser ? 'home' : 'landing');
+  });
+
+  // Breadcrumbs click
+  document.getElementById('bc-home-link')?.addEventListener('click', () => switchView('home'));
+  document.getElementById('bc-proj-link')?.addEventListener('click', () => switchView('projects'));
+
+  // Project context dropdown toggle
+  const projectPill = document.getElementById('project-pill-btn');
+  const projectDropdown = document.getElementById('project-dropdown-menu');
+  projectPill?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isShown = projectDropdown.style.display !== 'none';
+    projectDropdown.style.display = isShown ? 'none' : 'block';
+  });
+  document.addEventListener('click', () => {
+    if (projectDropdown) projectDropdown.style.display = 'none';
+    const userMenu = document.getElementById('user-dropdown-menu');
+    if (userMenu) userMenu.style.display = 'none';
+  });
+
+  // Header Add Project button
+  document.getElementById('btn-header-add-project')?.addEventListener('click', () => openProjectModal());
+  document.getElementById('btn-dash-add-repo')?.addEventListener('click', () => openProjectModal());
+  document.getElementById('btn-home-add-project')?.addEventListener('click', () => openProjectModal());
+  document.getElementById('btn-projects-add-modal')?.addEventListener('click', () => openProjectModal());
+  document.getElementById('btn-empty-add-project')?.addEventListener('click', () => openProjectModal());
+
+  // User avatar menu toggle
+  const avatarBtn = document.getElementById('user-avatar-btn');
+  const userMenu = document.getElementById('user-dropdown-menu');
+  avatarBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isShown = userMenu.style.display !== 'none';
+    userMenu.style.display = isShown ? 'none' : 'block';
+  });
+
+  // Auth buttons
+  document.getElementById('btn-nav-login')?.addEventListener('click', () => openAuthModal('login'));
+  document.getElementById('btn-nav-register')?.addEventListener('click', () => openAuthModal('register'));
+  document.getElementById('btn-landing-get-started')?.addEventListener('click', () => {
+    if (state.currentUser) switchView('dashboard');
+    else openAuthModal('register');
+  });
+  document.getElementById('btn-landing-demo')?.addEventListener('click', () => switchView('dashboard'));
+  document.getElementById('btn-landing-to-mcp')?.addEventListener('click', () => switchView('mcp'));
+  document.getElementById('btn-home-to-dashboard')?.addEventListener('click', () => switchView('dashboard'));
+  document.getElementById('btn-home-all-projects')?.addEventListener('click', () => switchView('projects'));
+  document.getElementById('btn-home-all-scans')?.addEventListener('click', () => switchView('activity'));
+
+  // User menu items
+  document.getElementById('menu-item-home')?.addEventListener('click', () => switchView('home'));
+  document.getElementById('menu-item-projects')?.addEventListener('click', () => switchView('projects'));
+  document.getElementById('menu-item-settings')?.addEventListener('click', () => switchView('settings'));
+  document.getElementById('menu-item-logout')?.addEventListener('click', handleLogout);
+  document.getElementById('btn-settings-logout')?.addEventListener('click', handleLogout);
+
+  // Modals close
+  document.getElementById('modal-auth-close')?.addEventListener('click', () => closeAuthModal());
+  document.getElementById('modal-project-close')?.addEventListener('click', () => closeProjectModal());
+  document.getElementById('btn-cancel-project')?.addEventListener('click', () => closeProjectModal());
+
+  // Auth form submissions
+  document.getElementById('tab-login-btn')?.addEventListener('click', () => switchAuthTab('login'));
+  document.getElementById('tab-register-btn')?.addEventListener('click', () => switchAuthTab('register'));
+  document.getElementById('form-login')?.addEventListener('submit', handleLogin);
+  document.getElementById('form-register')?.addEventListener('submit', handleRegister);
+  document.getElementById('form-add-project')?.addEventListener('submit', handleAddProject);
+
+  // Quick scan on Home page
+  document.getElementById('btn-home-scan-run')?.addEventListener('click', () => {
+    const input = document.getElementById('home-scan-input')?.value.trim();
+    if (input) triggerScan(input);
+  });
+
+  // Dashboard Repository Search
+  document.getElementById('dash-repo-search')?.addEventListener('input', (e) => {
+    filterDashboardTable(e.target.value);
+  });
+
+  // Vulnerability filter
+  document.getElementById('vuln-search-input')?.addEventListener('input', (e) => {
+    filterVulnsTable(e.target.value);
+  });
+
+  // Commit Check
+  document.getElementById('btn-run-commit-check')?.addEventListener('click', handleCommitCheck);
+
+  // Copilot Chat
+  document.getElementById('btn-copilot-send')?.addEventListener('click', handleCopilotSend);
+  document.getElementById('copilot-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleCopilotSend();
+    }
+  });
+  document.getElementById('btn-clear-chat')?.addEventListener('click', clearCopilotChat);
+
+  // MCP Refresh
+  document.getElementById('btn-mcp-refresh')?.addEventListener('click', refreshMCPTools);
+
+  // Global search keyboard shortcut (Ctrl+K)
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      document.getElementById('global-search-input')?.focus();
+    }
+  });
+}
+
+function toggleRail() {
+  state.isRailExpanded = !state.isRailExpanded;
+  const rail = document.getElementById('nav-rail');
+  rail?.classList.toggle('expanded', state.isRailExpanded);
+}
+
+function switchView(viewName) {
+  state.activeView = viewName;
+
+  // Update URL hash
+  window.location.hash = `#${viewName}`;
+
+  // Update Rail active class
+  document.querySelectorAll('.rail-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.view === viewName);
+  });
+
+  // Show only target view
+  document.querySelectorAll('.page-view').forEach(view => {
+    view.style.display = view.id === `view-${viewName}` ? 'block' : 'none';
+  });
+
+  // Trigger view-specific re-renders
+  if (viewName === 'dashboard') loadDashboardOverview();
+  if (viewName === 'projects') renderProjectsList();
+  if (viewName === 'activity') renderActivityTable();
+  if (viewName === 'settings') renderSettings();
+  if (viewName === 'vulnerabilities' && state.currentScan) renderVulnerabilitiesTable(state.currentScan);
+}
+
+function setupHashRouting() {
+  const hash = window.location.hash.replace('#', '').trim();
+  if (hash) {
+    switchView(hash);
+  } else {
+    // Default to dashboard
+    switchView('dashboard');
+  }
+
+  window.addEventListener('hashchange', () => {
+    const newHash = window.location.hash.replace('#', '').trim();
+    if (newHash && newHash !== state.activeView) {
+      switchView(newHash);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// Authentication & User Session
+// ════════════════════════════════════════════════════════════
+
+async function checkAuthSession() {
+  try {
+    const user = await apiFetch('/api/auth/me');
+    state.currentUser = user;
+    renderAuthUI(user);
+  } catch {
+    state.currentUser = null;
+    renderAuthUI(null);
+  }
+}
+
+function renderAuthUI(user) {
+  const unauthControls = document.getElementById('unauth-controls');
+  const authControls = document.getElementById('auth-controls');
+
+  if (user) {
+    unauthControls.style.display = 'none';
+    authControls.style.display = 'flex';
+
+    const initials = (user.full_name || user.username || 'RS')
+      .split(' ')
+      .map(w => w[0])
+      .join('')
+      .substring(0, 2)
+      .toUpperCase();
+
+    document.getElementById('user-avatar-initials').textContent = initials;
+    document.getElementById('menu-user-name').textContent = user.full_name || user.username;
+    document.getElementById('menu-user-email').textContent = user.email;
+    document.getElementById('home-welcome-name').textContent = `Welcome back, ${user.full_name || user.username}`;
+  } else {
+    unauthControls.style.display = 'flex';
+    authControls.style.display = 'none';
+  }
+}
+
+function openAuthModal(tab = 'login') {
+  const modal = document.getElementById('auth-modal');
+  modal.style.display = 'flex';
+  switchAuthTab(tab);
+}
+
+function closeAuthModal() {
+  document.getElementById('auth-modal').style.display = 'none';
+}
+
+function switchAuthTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('tab-login-btn').classList.toggle('active', isLogin);
+  document.getElementById('tab-register-btn').classList.toggle('active', !isLogin);
+  document.getElementById('form-login').style.display = isLogin ? 'block' : 'none';
+  document.getElementById('form-register').style.display = isLogin ? 'none' : 'block';
+  document.getElementById('login-error-msg').style.display = 'none';
+  document.getElementById('reg-error-msg').style.display = 'none';
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  const idInput = document.getElementById('login-id').value.trim();
+  const pwdInput = document.getElementById('login-pwd').value;
+  const errorEl = document.getElementById('login-error-msg');
+  errorEl.style.display = 'none';
 
   try {
-    const data = await apiFetch('/api/scan', {
+    const user = await apiFetch('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username_or_email: idInput, password: pwdInput }),
+    });
+    state.currentUser = user;
+    renderAuthUI(user);
+    closeAuthModal();
+    showAlert(`Welcome back, ${user.username}!`, 'success');
+    await loadProjects();
+    await loadDashboardOverview();
+    switchView('dashboard');
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.style.display = 'block';
+  }
+}
+
+async function handleRegister(e) {
+  e.preventDefault();
+  const fullName = document.getElementById('reg-name').value.trim();
+  const username = document.getElementById('reg-username').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-pwd').value;
+  const errorEl = document.getElementById('reg-error-msg');
+  errorEl.style.display = 'none';
+
+  try {
+    const user = await apiFetch('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        full_name: fullName || null,
+        username,
+        email,
+        password,
+      }),
+    });
+    state.currentUser = user;
+    renderAuthUI(user);
+    closeAuthModal();
+    showAlert(`Account created successfully! Welcome to RepoSentinel AI.`, 'success');
+    await loadProjects();
+    await loadDashboardOverview();
+    switchView('home');
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.style.display = 'block';
+  }
+}
+
+async function handleLogout() {
+  try {
+    await apiFetch('/api/auth/logout', { method: 'POST' });
+  } catch {}
+  state.currentUser = null;
+  renderAuthUI(null);
+  showAlert('You have been signed out.', 'info');
+  switchView('landing');
+}
+
+// ════════════════════════════════════════════════════════════
+// Projects Management
+// ════════════════════════════════════════════════════════════
+
+async function loadProjects() {
+  if (!state.currentUser) return;
+  try {
+    const data = await apiFetch('/api/projects');
+    state.projects = data?.projects ?? [];
+    renderProjectDropdown();
+    renderProjectsList();
+  } catch {
+    state.projects = [];
+  }
+}
+
+function openProjectModal() {
+  if (!state.currentUser) {
+    showAlert('Please sign in or create an account to onboard repositories.', 'info');
+    openAuthModal('login');
+    return;
+  }
+  document.getElementById('add-project-modal').style.display = 'flex';
+  document.getElementById('project-error-msg').style.display = 'none';
+  document.getElementById('project-repo-input').value = '';
+}
+
+function closeProjectModal() {
+  document.getElementById('add-project-modal').style.display = 'none';
+}
+
+async function handleAddProject(e) {
+  e.preventDefault();
+  const repoSlug = document.getElementById('project-repo-input').value.trim();
+  const errorEl = document.getElementById('project-error-msg');
+  errorEl.style.display = 'none';
+
+  try {
+    showLoading(true, 'Verifying repository via GitHub REST API...');
+    const project = await apiFetch('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ repo_url_or_slug: repoSlug }),
+    });
+    closeProjectModal();
+    showAlert(`Repository ${project.owner}/${project.repo} onboarded successfully!`, 'success');
+    await loadProjects();
+    await loadDashboardOverview();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.style.display = 'block';
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function deleteProject(projectId, owner, repo) {
+  if (!confirm(`Are you sure you want to remove ${owner}/${repo} from onboarded projects?`)) return;
+  try {
+    await apiFetch(`/api/projects/${projectId}`, { method: 'DELETE' });
+    showAlert(`Removed ${owner}/${repo}.`, 'info');
+    await loadProjects();
+    await loadDashboardOverview();
+  } catch (err) {
+    showAlert(err.message, 'error');
+  }
+}
+
+function renderProjectDropdown() {
+  const listEl = document.getElementById('project-dropdown-list');
+  if (!listEl) return;
+
+  let html = `
+    <div class="dropdown-item ${state.selectedProjectId === 'all' ? 'active' : ''}" data-project-id="all">
+      <span class="item-badge">ALL</span>
+      <span class="item-name">All Repositories</span>
+    </div>
+  `;
+
+  for (const p of state.projects) {
+    const isAct = state.selectedProjectId === String(p.id);
+    const initial = p.repo.charAt(0).toUpperCase();
+    html += `
+      <div class="dropdown-item ${isAct ? 'active' : ''}" data-project-id="${p.id}" data-owner="${p.owner}" data-repo="${p.repo}">
+        <span class="item-badge">${initial}</span>
+        <span class="item-name">${p.owner}/${p.repo}</span>
+      </div>
+    `;
+  }
+  listEl.innerHTML = html;
+
+  listEl.querySelectorAll('.dropdown-item').forEach(item => {
+    item.addEventListener('click', () => {
+      state.selectedProjectId = item.dataset.projectId;
+      const name = item.querySelector('.item-name')?.textContent || 'All Repositories';
+      const badge = item.querySelector('.item-badge')?.textContent || 'ALL';
+      document.getElementById('project-pill-name').textContent = name;
+      document.getElementById('project-pill-badge').textContent = badge;
+      document.getElementById('project-dropdown-menu').style.display = 'none';
+      loadDashboardOverview();
+    });
+  });
+}
+
+function renderProjectsList() {
+  const container = document.getElementById('projects-grid-container');
+  if (!container) return;
+
+  if (state.projects.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <h3>No Projects Onboarded</h3>
+        <p>Add your first repository to automatically track vulnerabilities and remediation pull requests.</p>
+        <button class="btn btn-primary mt-3" onclick="openProjectModal()">+ Add Repository</button>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '';
+  for (const p of state.projects) {
+    html += `
+      <div class="card p-4">
+        <div class="card-header-row mb-2">
+          <h4>${escapeHtml(p.owner)}/<span class="text-white">${escapeHtml(p.repo)}</span></h4>
+          <span class="status-badge ok">GitHub</span>
+        </div>
+        <p class="text-sm text-muted mb-3">${escapeHtml(p.description || 'No description provided on GitHub.')}</p>
+        <div class="project-stats-row text-xs text-muted mb-4">
+          <span>Branch: <code>${escapeHtml(p.default_branch)}</code></span> · 
+          <span>★ ${p.stars}</span> · 
+          <span>Forks: ${p.forks}</span> · 
+          <span>Manifest: <code>${escapeHtml(p.primary_manifest || 'Auto-detect')}</code></span>
+        </div>
+        <div class="project-actions-row flex gap-2">
+          <button class="btn btn-sm btn-primary" onclick="triggerScan('${escapeHtml(p.owner)}/${escapeHtml(p.repo)}')">Run Security Scan</button>
+          <button class="btn btn-sm btn-outline text-danger" onclick="deleteProject(${p.id}, '${escapeHtml(p.owner)}', '${escapeHtml(p.repo)}')">Remove</button>
+        </div>
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+}
+
+// ════════════════════════════════════════════════════════════
+// THE MOOLE DASHBOARD (Severity Cards + Donut Chart + Table)
+// ════════════════════════════════════════════════════════════
+
+async function loadDashboardOverview() {
+  try {
+    const data = await apiFetch('/api/dashboard/overview');
+    state.dashboardData = data;
+    renderMooleDashboard(data);
+  } catch (err) {
+    console.error('Failed to load dashboard overview:', err);
+  }
+}
+
+function renderMooleDashboard(data) {
+  if (!data) return;
+
+  // 1. Breadcrumb onboarded pill
+  const count = data.total_onboarded_repositories ?? 0;
+  document.getElementById('dashboard-onboarded-text').textContent = `Total onboarded repositories: ${count}`;
+
+  // 2. Four Severity Cards
+  document.getElementById('dash-crit-count').textContent = `Total: ${data.critical_total ?? 0}`;
+  document.getElementById('dash-high-count').textContent = `Total: ${data.high_total ?? 0}`;
+  document.getElementById('dash-med-count').textContent = `Total: ${data.medium_total ?? 0}`;
+  document.getElementById('dash-low-count').textContent = `Total: ${data.low_total ?? 0}`;
+
+  // 3. Donut Chart SVG
+  renderDonutChart(data);
+
+  // 4. Repositories Table
+  renderDashboardTable(data.repositories || []);
+}
+
+function renderDonutChart(data) {
+  const total = (data.critical_total || 0) + (data.high_total || 0) + (data.medium_total || 0) + (data.low_total || 0);
+  document.getElementById('donut-total-vulns').textContent = total;
+
+  const svg = document.getElementById('donut-svg');
+  if (!svg) return;
+
+  if (total === 0) {
+    svg.innerHTML = `
+      <circle class="donut-ring" cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#1e293b" stroke-width="6"></circle>
+    `;
+    return;
+  }
+
+  const critPct = (data.critical_total / total) * 100;
+  const highPct = (data.high_total / total) * 100;
+  const medPct  = (data.medium_total / total) * 100;
+  const lowPct  = (data.low_total / total) * 100;
+
+  let offset = 25; // start at 12 o'clock
+
+  function createSlice(pct, color) {
+    if (pct <= 0) return '';
+    const sliceHtml = `
+      <circle class="donut-segment" cx="21" cy="21" r="15.91549430918954"
+        fill="transparent" stroke="${color}" stroke-width="6"
+        stroke-dasharray="${pct} ${100 - pct}"
+        stroke-dashoffset="${offset}">
+      </circle>
+    `;
+    offset -= pct;
+    return sliceHtml;
+  }
+
+  let html = `<circle class="donut-ring" cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#1e293b" stroke-width="6"></circle>`;
+  html += createSlice(critPct, 'var(--sev-critical)');
+  html += createSlice(highPct, 'var(--sev-high)');
+  html += createSlice(medPct,  'var(--sev-medium)');
+  html += createSlice(lowPct,  'var(--sev-low)');
+
+  svg.innerHTML = html;
+}
+
+function renderDashboardTable(repos) {
+  const tbody = document.getElementById('dashboard-repos-tbody');
+  if (!tbody) return;
+
+  if (repos.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" class="text-center py-4 text-muted">
+          No repositories onboarded yet. Click "+ Add Repository" to begin auditing codebases.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  let html = '';
+  for (const r of repos) {
+    const lastScanFormatted = r.last_scan
+      ? new Date(r.last_scan).toLocaleString()
+      : 'Never scanned';
+
+    html += `
+      <tr data-repo-name="${escapeHtml(r.repository)}">
+        <td>
+          <strong>${escapeHtml(r.repository)}</strong>
+        </td>
+        <td class="text-center text-critical">${r.critical}</td>
+        <td class="text-center text-high">${r.high}</td>
+        <td class="text-center text-medium">${r.medium}</td>
+        <td class="text-center text-low">${r.low}</td>
+        <td><code>${escapeHtml(r.build_file || 'requirements.txt')}</code></td>
+        <td>
+          <span style="display:inline-flex;align-items:center;gap:6px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            GitHub
+          </span>
+        </td>
+        <td class="text-muted text-xs">${escapeHtml(lastScanFormatted)}</td>
+        <td class="text-right">
+          <button class="btn btn-xs btn-primary" onclick="triggerScan('${escapeHtml(r.repository)}')">Scan</button>
+        </td>
+      </tr>
+    `;
+  }
+  tbody.innerHTML = html;
+}
+
+function filterDashboardTable(query) {
+  const q = query.toLowerCase();
+  const rows = document.querySelectorAll('#dashboard-repos-tbody tr');
+  rows.forEach(r => {
+    const name = r.dataset.repoName || '';
+    r.style.display = name.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// Scanning & Findings
+// ════════════════════════════════════════════════════════════
+
+async function triggerScan(repoInput) {
+  let [owner, repo] = repoInput.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').split('/');
+  if (!owner || !repo) {
+    showAlert("Please specify a valid repository as 'owner/repo'.", 'warn');
+    return;
+  }
+  owner = owner.trim();
+  repo = repo.trim();
+
+  showLoading(true, `Auditing dependencies and vulnerabilities for ${owner}/${repo}...`);
+
+  try {
+    const scanResult = await apiFetch('/api/scan', {
       method: 'POST',
       body: JSON.stringify({ owner, repo }),
     });
 
-    state.currentRepo  = { owner, repo };
-    state.currentScan  = data;
-    state.scanResults  = data;
-    state.chatContext  = { owner, repo };
+    state.currentScan = scanResult;
 
-    setProgressStep('step-fetch', 'done');
-    setProgressStep('step-osv', 'done');
-    setProgressStep('step-gh', 'done');
-
-    const commitRepoEl = document.getElementById('commit-repo-input');
-    if (commitRepoEl && !commitRepoEl.value.trim()) {
-      commitRepoEl.value = `${owner}/${repo}`;
+    // Update nav badge
+    const vulnCount = scanResult.total_vulnerabilities ?? 0;
+    const badge = document.getElementById('badge-vulns');
+    if (badge) {
+      badge.textContent = vulnCount;
+      badge.style.display = vulnCount > 0 ? 'inline-block' : 'none';
     }
 
-    renderScanResults(data);
-    renderGithubCorrelation(data);
-    renderTraceFromScan(data);
+    // Refresh dashboard and history
+    await loadDashboardOverview();
+    await loadScanHistory();
 
-    // Update nav badges
-    const vulnCount = data?.vulnerabilities?.length ?? 0;
-    updateNavBadge('nav-vulnerabilities', vulnCount > 0 ? vulnCount : null);
+    // Render findings
+    renderVulnerabilitiesTable(scanResult);
+    renderGithubCorrelation(scanResult);
 
-    // Reload history to include the new scan
-    await loadHistory();
-
-    showBanner(`Scan complete — ${vulnCount} vulnerabilities found for ${owner}/${repo}`, 'success');
+    showAlert(`Scan complete for ${owner}/${repo} — ${vulnCount} vulnerabilities identified.`, 'success');
+    switchView('vulnerabilities');
   } catch (err) {
-    showError(err.message);
-    setProgressStep('step-fetch', 'error');
+    showAlert(err.message, 'error');
   } finally {
     showLoading(false);
-    setTimeout(() => progressEl?.classList.remove('active'), 2000);
   }
 }
 
-/** GET /api/mcp-tools – list all registered MCP tools */
-async function loadMCPTools() {
-  try {
-    const data = await apiFetch('/api/mcp-tools');
-    state.mcpTools = data?.tools ?? [];
-    renderMCPTools(data);
-  } catch (err) {
-    renderMCPToolsError(err.message);
+function renderVulnerabilitiesTable(scan) {
+  const tbody = document.getElementById('vulns-findings-tbody');
+  if (!tbody) return;
+
+  const vulns = scan.vulnerabilities || [];
+  if (vulns.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" class="text-center py-4 text-muted">
+          No vulnerabilities found for ${escapeHtml(scan.owner)}/${escapeHtml(scan.repo)}.
+        </td>
+      </tr>
+    `;
+    return;
   }
+
+  let html = '';
+  for (const pkg of vulns) {
+    const pkgName = pkg.package_name || pkg.package || 'Unknown';
+    const installedVer = pkg.installed_version || pkg.version || 'Pinned';
+    const subVulns = pkg.vulnerabilities || [pkg];
+
+    for (const v of subVulns) {
+      const vid = v.vulnerability_id || v.id || 'N/A';
+      const sev = (v.severity_label || v.severity || 'UNKNOWN').toUpperCase();
+      let sevClass = 'text-low';
+      if (sev.includes('CRIT')) sevClass = 'text-critical';
+      else if (sev.includes('HIGH')) sevClass = 'text-high';
+      else if (sev.includes('MED') || sev.includes('MOD')) sevClass = 'text-medium';
+
+      const fixedVersions = (v.fixed_versions || []).join(', ') || 'None';
+      const ranges = (v.affected_ranges || []).join('; ') || 'N/A';
+      const osvUrl = v.osv_url || `https://osv.dev/vulnerability/${vid}`;
+
+      html += `
+        <tr>
+          <td><strong>${escapeHtml(pkgName)}</strong></td>
+          <td><code>${escapeHtml(installedVer)}</code></td>
+          <td><a href="${escapeHtml(osvUrl)}" target="_blank" rel="noopener">${escapeHtml(vid)}</a></td>
+          <td><span class="${sevClass}">${escapeHtml(sev)}</span></td>
+          <td class="text-xs text-muted">${escapeHtml(ranges)}</td>
+          <td><code>${escapeHtml(fixedVersions)}</code></td>
+          <td><span class="text-xs text-muted">OSV.dev</span></td>
+        </tr>
+      `;
+    }
+  }
+  tbody.innerHTML = html;
 }
 
-/** POST /api/refresh-tools – re-discover MCP tools */
-async function refreshMCPTools() {
-  const btn = document.getElementById('btn-refresh-tools');
-  if (btn) { btn.disabled = true; btn.textContent = '⟳ Refreshing…'; }
+function filterVulnsTable(query) {
+  const q = query.toLowerCase();
+  const rows = document.querySelectorAll('#vulns-findings-tbody tr');
+  rows.forEach(r => {
+    r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function renderGithubCorrelation(scan) {
+  const container = document.getElementById('github-correlation-grid');
+  if (!container) return;
+
+  const gh = scan.github || {};
+  const issues = gh.issues || [];
+  const prs = gh.pull_requests || gh.pulls || [];
+
+  if (issues.length === 0 && prs.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <h3>No Issues or Pull Requests Found</h3>
+        <p>No open issues or remediation pull requests reported by GitHub for ${escapeHtml(scan.owner)}/${escapeHtml(scan.repo)}.</p>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '';
+  // Remediation PRs
+  for (const pr of prs) {
+    const isConfirmed = pr.confirmed_match;
+    html += `
+      <div class="card p-3">
+        <div class="card-header-row mb-1">
+          <span class="status-badge ${isConfirmed ? 'ok' : 'warn'}">
+            ${isConfirmed ? 'CONFIRMED REMEDIATION PR' : 'PULL REQUEST'}
+          </span>
+          <span class="text-xs text-muted">#${pr.number}</span>
+        </div>
+        <h4 class="text-sm font-semibold mb-2">
+          <a href="${escapeHtml(pr.html_url)}" target="_blank" rel="noopener">${escapeHtml(pr.title)}</a>
+        </h4>
+        <p class="text-xs text-muted">Author: @${escapeHtml(pr.user?.login || pr.author || 'unknown')}</p>
+      </div>
+    `;
+  }
+  // Issues
+  for (const issue of issues) {
+    html += `
+      <div class="card p-3">
+        <div class="card-header-row mb-1">
+          <span class="status-badge">ISSUE</span>
+          <span class="text-xs text-muted">#${issue.number}</span>
+        </div>
+        <h4 class="text-sm font-semibold mb-2">
+          <a href="${escapeHtml(issue.html_url)}" target="_blank" rel="noopener">${escapeHtml(issue.title)}</a>
+        </h4>
+        <p class="text-xs text-muted">Author: @${escapeHtml(issue.user?.login || issue.author || 'unknown')}</p>
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+}
+
+// ════════════════════════════════════════════════════════════
+// Commit Security Lookup
+// ════════════════════════════════════════════════════════════
+
+async function handleCommitCheck() {
+  const repo = document.getElementById('commit-repo-input')?.value.trim();
+  const sha = document.getElementById('commit-sha-input')?.value.trim();
+
+  let owner = null, rName = null;
+  if (repo) {
+    const parts = repo.split('/');
+    if (parts.length === 2) {
+      owner = parts[0].trim();
+      rName = parts[1].trim();
+    }
+  }
+
+  showLoading(true, 'Querying commit hash against OSV vulnerability records...');
   try {
-    const data = await apiFetch('/api/refresh-tools', { method: 'POST' });
-    state.mcpTools = data?.tools ?? [];
-    renderMCPTools(data);
-    showBanner(`MCP tools refreshed (${state.mcpTools.length} tools discovered)`, 'success');
+    const res = await apiFetch('/api/commit-check', {
+      method: 'POST',
+      body: JSON.stringify({ owner, repo: rName, commit: sha || null }),
+    });
+
+    const area = document.getElementById('commit-results-area');
+    const card = document.getElementById('commit-results-card');
+    area.style.display = 'block';
+
+    const vulnsCount = res.vulnerability_count || 0;
+    const isVulnerable = vulnsCount > 0;
+
+    let vulnsHtml = '';
+    if (isVulnerable) {
+      vulnsHtml = `<ul class="mt-2 text-sm">`;
+      for (const v of res.vulnerabilities || []) {
+        vulnsHtml += `<li><strong>${escapeHtml(v.vulnerability_id || v.id)}</strong>: ${escapeHtml(v.summary || 'Known advisory')}</li>`;
+      }
+      vulnsHtml += `</ul>`;
+    }
+
+    card.innerHTML = `
+      <div class="card-header-row mb-3">
+        <h3>Commit Audit: <code>${escapeHtml(res.commit_hash)}</code></h3>
+        <span class="status-badge ${isVulnerable ? 'err' : 'ok'}">
+          ${isVulnerable ? `${vulnsCount} VULNERABILITIES DETECTED` : '0 OSV ADVISORIES LINKED'}
+        </span>
+      </div>
+      <p class="text-sm text-muted mb-2"><strong>Author:</strong> ${escapeHtml(res.author || 'N/A')} · <strong>Source:</strong> <code>${escapeHtml(res.source_url)}</code></p>
+      <p class="text-sm text-muted mb-3">${escapeHtml(res.commit_message || '')}</p>
+      ${vulnsHtml}
+      <div class="text-xs text-muted mt-3 p-2 bg-dark rounded border border-subtle">
+        ${escapeHtml(res.note || 'Zero records does not replace full dependency scanning.')}
+      </div>
+    `;
+
+    showAlert(`Commit query completed: ${vulnsCount} vulnerabilities linked to commit.`, isVulnerable ? 'warn' : 'success');
   } catch (err) {
-    showError(err.message);
+    showAlert(err.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh Tools'; }
+    showLoading(false);
   }
 }
 
-/** POST /api/chat – send a message to the AI copilot */
-async function sendChatMessage(message, owner, repo) {
-  if (!message.trim()) return;
+// ════════════════════════════════════════════════════════════
+// AI Security Copilot
+// ════════════════════════════════════════════════════════════
 
-  renderChatMessage('user', message, null);
-  scrollChatToBottom();
+async function handleCopilotSend() {
+  const input = document.getElementById('copilot-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
 
-  const thinkingId = renderThinkingBubble();
+  const container = document.getElementById('copilot-messages-container');
+  // Add User bubble
+  container.innerHTML += `
+    <div class="chat-bubble user">
+      <div class="bubble-content">${escapeHtml(text)}</div>
+    </div>
+  `;
+  container.scrollTop = container.scrollHeight;
+
+  // Add Thinking bubble
+  const thinkingId = `thinking-${Date.now()}`;
+  container.innerHTML += `
+    <div class="chat-bubble assistant" id="${thinkingId}">
+      <div class="bubble-header">RepoSentinel Copilot</div>
+      <div class="bubble-content text-muted">Orchestrating MCP tool calls via Groq and synthesizing security report...</div>
+    </div>
+  `;
+  container.scrollTop = container.scrollHeight;
 
   try {
-    const payload = { message };
-    if (owner) payload.owner = owner;
-    if (repo)  payload.repo  = repo;
+    const owner = state.currentScan?.owner || null;
+    const repo = state.currentScan?.repo || null;
 
     const data = await apiFetch('/api/chat', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ message: text, owner, repo }),
     });
 
-    removeThinkingBubble(thinkingId);
-    const trace = data.execution_trace ?? data.trace ?? [];
-    renderChatMessage('agent', data.response ?? data.content ?? '', trace, data);
+    const targetBubble = document.getElementById(thinkingId);
+    if (targetBubble) {
+      let formattedResponse = escapeHtml(data.response || 'No response produced.');
+      formattedResponse = formattedResponse.replace(/\n/g, '<br>');
 
-    // Append sources / tool trace
-    if (trace.length) {
-      appendTraceItems(trace);
-      updateNavBadge('nav-trace', (parseInt(document.getElementById('nav-trace')?.dataset.count ?? '0', 10) + trace.length) || null);
+      targetBubble.innerHTML = `
+        <div class="bubble-header">RepoSentinel Copilot · <span class="text-xs text-muted">${escapeHtml(data.groq_model_used || 'Groq')}</span></div>
+        <div class="bubble-content">${formattedResponse}</div>
+      `;
     }
+    container.scrollTop = container.scrollHeight;
   } catch (err) {
-    removeThinkingBubble(thinkingId);
-    renderChatMessage('agent', `⚠️ Error: ${err.message}`, null);
+    const targetBubble = document.getElementById(thinkingId);
+    if (targetBubble) {
+      targetBubble.innerHTML = `
+        <div class="bubble-header text-danger">Error</div>
+        <div class="bubble-content text-danger">${escapeHtml(err.message)}</div>
+      `;
+    }
   }
-
-  scrollChatToBottom();
 }
 
-/** GET /api/history – load scan history */
-async function loadHistory() {
+function clearCopilotChat() {
+  const container = document.getElementById('copilot-messages-container');
+  if (container) {
+    container.innerHTML = `
+      <div class="chat-bubble assistant">
+        <div class="bubble-header">RepoSentinel Copilot</div>
+        <div class="bubble-content">Conversation cleared. What repository or vulnerability shall we investigate next?</div>
+      </div>
+    `;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// MCP Inspector & Live State
+// ════════════════════════════════════════════════════════════
+
+async function loadMCPTools() {
   try {
-    const data = await apiFetch('/api/history');
-    state.history = data?.records ?? data ?? [];
-    renderHistory(state.history);
+    const data = await apiFetch('/api/mcp-tools');
+    state.mcpTools = data.tools || [];
+    renderMCPTools();
   } catch (err) {
-    renderHistoryError(err.message);
+    console.error('Failed to load MCP tools:', err);
   }
 }
 
-/** GET /api/live-state – refresh service status pills */
+async function refreshMCPTools() {
+  showLoading(true, 'Rediscovering MCP tools from both Synapse servers...');
+  try {
+    const data = await apiFetch('/api/refresh-tools', { method: 'POST' });
+    state.mcpTools = data.tools || [];
+    renderMCPTools();
+    showAlert(`Rediscovered ${data.total_tools} MCP tools across both microservices!`, 'success');
+  } catch (err) {
+    showAlert(err.message, 'error');
+  } finally {
+    showLoading(false);
+  }
+}
+
+function renderMCPTools() {
+  const container = document.getElementById('mcp-tools-list');
+  if (!container) return;
+
+  let html = '';
+  for (const t of state.mcpTools) {
+    html += `
+      <div class="mcp-tool-card">
+        <div>
+          <div class="tool-header-row">
+            <span class="tool-name-code">${escapeHtml(t.tool_name || t.name)}</span>
+          </div>
+          <p class="tool-desc-text">${escapeHtml(t.description || 'No description provided by Synapse.')}</p>
+        </div>
+        <span class="tool-server-badge">${escapeHtml(t.server_name || t.server || 'microservice')}</span>
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+}
+
 async function loadLiveState() {
   try {
     const data = await apiFetch('/api/live-state');
     state.liveState = data;
-    renderLiveState(data);
-  } catch {
-    // Silently mark all as unknown on failure
-    renderLiveState(null);
-  }
+
+    const ghDot = document.getElementById('status-gh-dot');
+    const osvDot = document.getElementById('status-osv-dot');
+    const mcpDot = document.getElementById('status-mcp-dot');
+
+    if (ghDot) ghDot.className = `status-indicator-dot ${data.github_service_status === 'ok' ? 'ok' : 'err'}`;
+    if (osvDot) osvDot.className = `status-indicator-dot ${data.osv_service_status === 'ok' ? 'ok' : 'err'}`;
+    if (mcpDot) mcpDot.className = `status-indicator-dot ${data.mcp_tools_discovered >= 10 ? 'ok' : 'warn'}`;
+  } catch {}
 }
 
-// ═══════════════════════════════════════════════════════════
-// Render: Scan Results
-// ═══════════════════════════════════════════════════════════
-
-function renderScanResults(data) {
-  if (!data) return;
-
-  const vulns     = data.vulnerabilities ?? [];
-  const deps      = data.dependencies    ?? [];
-  const stats     = data.stats           ?? {};
-  const owner     = data.owner           ?? state.currentRepo?.owner ?? '';
-  const repo      = data.repo            ?? state.currentRepo?.repo  ?? '';
-  const scannedAt = data.scanned_at      ?? data.timestamp           ?? null;
-
-  // ── Result header
-  const headerEl = document.getElementById('scan-result-header');
-  if (headerEl) {
-    headerEl.classList.remove('hidden');
-    headerEl.innerHTML = `
-      <span class="scan-repo-name">📦 ${escHtml(owner)}/${escHtml(repo)}</span>
-      ${scannedAt ? `<span class="scan-timestamp">Scanned ${formatDate(scannedAt)}</span>` : ''}
-      <span class="ml-auto">
-        <span class="tag">${deps.length} dependencies</span>
-      </span>`;
-  }
-
-  // ── Stat cards
-  const critical = countSeverity(vulns, 'CRITICAL');
-  const high     = countSeverity(vulns, 'HIGH');
-  const medium   = countSeverity(vulns, 'MEDIUM');
-  const low      = countSeverity(vulns, 'LOW');
-  const unresolved = data.unresolved_count ?? deps.filter(d => d.is_resolved === false).length;
-  const openPRs  = data.open_remediation_prs ?? (data.github?.pull_requests?.filter(p => p.state === 'open').length ?? 0);
-
-  const statData = [
-    { label: 'Dependencies',   value: data.total_dependencies ?? deps.length, cls: 'info', id: 'stat-deps' },
-    { label: 'Vulnerabilities',value: data.total_vulnerabilities ?? vulns.length, cls: 'critical', id: 'stat-vulns' },
-    { label: 'Critical',       value: critical,         cls: 'critical', id: 'stat-critical' },
-    { label: 'High',           value: high,             cls: 'high',     id: 'stat-high' },
-    { label: 'Medium',         value: medium,           cls: 'medium',   id: 'stat-medium' },
-    { label: 'Low',            value: low,              cls: 'low',      id: 'stat-low' },
-    { label: 'Unresolved Ver', value: unresolved,       cls: unresolved > 0 ? 'medium' : '', id: 'stat-unresolved' },
-    { label: 'Remediation PRs',value: openPRs,          cls: 'info',     id: 'stat-prs' },
-  ];
-
-  const grid = document.getElementById('stat-grid-overview');
-  if (grid) {
-    grid.innerHTML = statData.map(s => `
-      <div class="stat-card ${s.cls}" id="${s.id}">
-        <div class="stat-label">${escHtml(s.label)}</div>
-        <div class="stat-value ${s.cls}">${s.value}</div>
-      </div>`).join('');
-  }
-
-  // ── Vulnerability table (section-scan + section-vulnerabilities)
-  ['vuln-table-scan', 'vuln-table-vulns'].forEach(id => {
-    const container = document.getElementById(id);
-    if (!container) return;
-    container.innerHTML = vulns.length
-      ? buildVulnTable(vulns)
-      : emptyState('🛡️', 'No vulnerabilities found', 'This repository has no known vulnerabilities in its dependencies.');
-  });
-}
-
-function buildVulnTable(vulns) {
-  const thead = `
-    <thead>
-      <tr>
-        <th class="sortable" data-col="package">Package</th>
-        <th class="sortable" data-col="version">Version</th>
-        <th class="sortable" data-col="id">ID</th>
-        <th class="sortable" data-col="severity">Severity</th>
-        <th>Affected Range</th>
-        <th>Fixed Version</th>
-        <th>Source</th>
-      </tr>
-    </thead>`;
-
-  const rows = vulns.map((v, i) => `
-    <tr data-idx="${i}">
-      <td class="cell-package">${escHtml(v.package ?? v.name ?? '—')}</td>
-      <td class="cell-version">${escHtml(v.version ?? '—')}</td>
-      <td class="cell-id"><a href="${buildVulnLink(v)}" target="_blank" rel="noopener">${escHtml(v.id ?? v.vuln_id ?? '—')}</a></td>
-      <td>${severityBadge(v.severity)}</td>
-      <td class="cell-range">${escHtml(v.affected_range ?? v.ranges ?? '—')}</td>
-      <td class="cell-fixed">${escHtml(v.fixed_version ?? v.fixed ?? '—')}</td>
-      <td class="cell-source">${escHtml(v.source ?? v.database ?? 'OSV')}</td>
-    </tr>`).join('');
-
-  return `<div class="table-wrapper"><table class="vuln-table">${thead}<tbody>${rows}</tbody></table></div>`;
-}
-
-function buildVulnLink(v) {
-  const id = v.id ?? v.vuln_id ?? '';
-  if (id.startsWith('GHSA-')) return `https://github.com/advisories/${id}`;
-  if (id.startsWith('CVE-'))  return `https://nvd.nist.gov/vuln/detail/${id}`;
-  return `https://osv.dev/vulnerability/${id}`;
-}
-
-function countSeverity(vulns, sev) {
-  return vulns.filter(v => (v.severity ?? '').toUpperCase() === sev).length;
-}
-
-// ═══════════════════════════════════════════════════════════
-// Render: GitHub Correlation
-// ═══════════════════════════════════════════════════════════
-
-function renderGithubCorrelation(data) {
-  const container = document.getElementById('github-cards');
-  if (!container) return;
-
-  const issues = data?.github?.issues ?? [];
-  const prs    = data?.github?.pull_requests ?? data?.github?.prs ?? [];
-  const all    = [
-    ...issues.map(i => ({ ...i, _type: 'issue' })),
-    ...prs.map(p => ({ ...p, _type: 'pr' })),
-  ];
-
-  if (!all.length) {
-    container.innerHTML = emptyState('🐙', 'No GitHub items found', 'No related issues or pull requests were returned for this repository.');
-    return;
-  }
-
-  container.innerHTML = `<div class="issue-grid">${all.map(buildIssueCard).join('')}</div>`;
-}
-
-function buildIssueCard(item) {
-  const type  = item._type;
-  const state_ = (item.state ?? 'open').toLowerCase();
-  const merged = !!item.merged_at;
-  const icon   = type === 'pr'
-    ? (merged ? '↗' : state_ === 'closed' ? '✕' : '↗')
-    : (state_ === 'closed' ? '✓' : '●');
-  const iconCls = type === 'pr'
-    ? (merged ? 'pr-merged' : state_ === 'closed' ? 'pr-closed' : 'pr-open')
-    : (state_ === 'closed' ? 'issue-closed' : 'issue-open');
-
-  const labels = (item.labels ?? []).slice(0, 3).map(l => {
-    const color = l.color ? `#${l.color}` : 'var(--border-muted)';
-    const fg    = l.color ? contrastColor(l.color) : 'var(--text-secondary)';
-    return `<span class="issue-label" style="background:${color}22;border-color:${color}66;color:${fg}">${escHtml(l.name ?? l)}</span>`;
-  }).join('');
-
-  const url   = item.html_url ?? item.url ?? '#';
-  const title = item.title ?? '(No title)';
-  const num   = item.number ? `#${item.number}` : '';
-  const user  = item.user?.login ?? item.author ?? '';
-  const body  = item.body ? item.body.slice(0, 160) : '';
-
-  const corr = item.correlation_status;
-  const corrTag = corr === 'confirmed_match'
-    ? '<span class="severity-badge critical">Confirmed Match</span>'
-    : corr === 'possible_match'
-      ? '<span class="severity-badge medium">Possible Match</span>'
-      : '';
-  const matchedIds = (item.matched_vulnerability_ids ?? []).map(v => `<span class="tag">${escHtml(v)}</span>`).join('');
-
-  return `
-    <div class="issue-card">
-      <div class="issue-card-header">
-        <div class="issue-type-icon ${iconCls}">${icon}</div>
-        <div class="issue-card-title">
-          <a href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(title)}</a>
-        </div>
-      </div>
-      <div class="issue-card-meta">
-        <span class="issue-num">${escHtml(num)}</span>
-        ${corrTag}
-        ${matchedIds}
-        ${user ? `<span>by ${escHtml(user)}</span>` : ''}
-        ${labels}
-        <span class="tag">${type === 'pr' ? 'Pull Request' : 'Issue'}</span>
-        <span class="tag">${escHtml(state_)}</span>
-      </div>
-      ${body ? `<div class="issue-card-body mt-8">${escHtml(body)}…</div>` : ''}
-    </div>`;
-}
-
-function contrastColor(hex) {
+async function loadScanHistory() {
   try {
-    const r = parseInt(hex.slice(0,2),16);
-    const g = parseInt(hex.slice(2,4),16);
-    const b = parseInt(hex.slice(4,6),16);
-    return (r*299 + g*587 + b*114)/1000 > 128 ? '#0d1117' : '#e6edf3';
-  } catch { return 'var(--text-primary)'; }
+    const data = await apiFetch('/api/history');
+    state.history = data || [];
+    renderActivityTable();
+  } catch {}
 }
 
-// ═══════════════════════════════════════════════════════════
-// Render: MCP Tools
-// ═══════════════════════════════════════════════════════════
+function renderActivityTable() {
+  const tbody = document.getElementById('activity-tbody');
+  if (!tbody) return;
 
-function renderMCPTools(payload) {
-  const tools = Array.isArray(payload) ? payload : (payload?.tools ?? []);
-  const serverContainer = document.getElementById('mcp-server-cards');
-  const toolContainer   = document.getElementById('mcp-tool-cards');
-  const ghStatus = payload?.github_server_status ?? 'unknown';
-  const osvStatus = payload?.osv_server_status ?? 'unknown';
-  const refreshedAt = payload?.last_refreshed_at ? formatDate(payload.last_refreshed_at) : 'Never';
-
-  const servers = {
-    'github-service-mcp': { status: ghStatus, tools: [] },
-    'osv-service-mcp': { status: osvStatus, tools: [] },
-  };
-  for (const t of tools) {
-    const srv = t.server ?? t.server_name ?? t.mcp_server ?? 'Unknown';
-    if (!servers[srv]) servers[srv] = { status: 'connected', tools: [] };
-    servers[srv].tools.push(t);
-  }
-
-  if (serverContainer) {
-    serverContainer.innerHTML = Object.entries(servers).map(([srvName, info]) => {
-      const ok = info.status === 'connected';
-      return `
-      <div class="server-card">
-        <div class="server-card-header">
-          <div class="server-status-dot ${ok ? 'connected' : 'error'}"></div>
-          <span class="server-name">${escHtml(srvName)}</span>
-          <span class="server-type">${escHtml(info.status)} · ${info.tools.length} tool${info.tools.length !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="server-meta">
-          <div>Last refresh: ${escHtml(refreshedAt)}</div>
-          <div>Tools: ${info.tools.length ? info.tools.map(t => `<code>${escHtml(t.name ?? t.tool_name ?? '')}</code>`).join(', ') : '<span class="text-muted">None discovered</span>'}</div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  if (!tools.length) {
-    if (toolContainer) {
-      toolContainer.innerHTML = emptyState('🔧', 'No tools discovered', 'Start github_service (8001) and osv_service (8002), then click Refresh Tools.');
-    }
+  if (state.history.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted">No scan records logged yet.</td></tr>`;
     return;
   }
 
-  if (toolContainer) {
-    toolContainer.innerHTML = tools.map(t => {
-      const name   = t.name ?? t.tool_name ?? 'unknown';
-      const server = t.server ?? t.server_name ?? t.mcp_server ?? '';
-      const desc   = t.description ?? t.desc ?? '';
-      const icon   = toolIcon(name);
-      return `
-        <div class="tool-card">
-          <div class="tool-card-header">
-            <div class="tool-card-icon">${icon}</div>
-            <div class="tool-card-name">${escHtml(name)}</div>
-          </div>
-          <div class="tool-card-server">via ${escHtml(server)}</div>
-          <div class="tool-card-desc">${escHtml(desc) || '<span class="text-muted">No description</span>'}</div>
-        </div>`;
-    }).join('');
+  let html = '';
+  for (const h of state.history) {
+    html += `
+      <tr>
+        <td>#${h.id}</td>
+        <td><strong>${escapeHtml(h.owner)}/${escapeHtml(h.repo)}</strong></td>
+        <td><span class="status-badge ${h.status === 'completed' ? 'ok' : 'err'}">${escapeHtml(h.status)}</span></td>
+        <td>${h.total_dependencies}</td>
+        <td>${h.total_vulnerabilities}</td>
+        <td class="text-critical">${h.critical || 0}</td>
+        <td>${h.duration_seconds || '0'}s</td>
+        <td class="text-xs text-muted">${new Date(h.scanned_at || h.started_at).toLocaleString()}</td>
+      </tr>
+    `;
   }
+  tbody.innerHTML = html;
 }
 
-function renderMCPToolsError(msg) {
-  const c = document.getElementById('mcp-tool-cards');
-  if (c) c.innerHTML = emptyState('⚠️', 'Failed to load tools', msg);
+function renderSettings() {
+  if (!state.currentUser) return;
+  document.getElementById('settings-username').value = state.currentUser.username;
+  document.getElementById('settings-email').value = state.currentUser.email;
+  document.getElementById('settings-created').value = new Date(state.currentUser.created_at).toLocaleString();
 }
 
-function toolIcon(name) {
-  const n = name.toLowerCase();
-  if (n.includes('search'))    return '🔍';
-  if (n.includes('vuln') || n.includes('osv')) return '🛡️';
-  if (n.includes('issue') || n.includes('github') || n.includes('gh')) return '🐙';
-  if (n.includes('pr') || n.includes('pull')) return '↗';
-  if (n.includes('dep') || n.includes('package')) return '📦';
-  if (n.includes('scan'))      return '🔬';
-  if (n.includes('list'))      return '📋';
-  if (n.includes('create'))    return '✏️';
-  return '🔧';
-}
+// ════════════════════════════════════════════════════════════
+// Utilities: Alert Banner & Loading
+// ════════════════════════════════════════════════════════════
 
-// ═══════════════════════════════════════════════════════════
-// Render: Chat
-// ═══════════════════════════════════════════════════════════
-
-function renderChatMessage(role, content, trace, metaData = null) {
-  const history = document.getElementById('chat-history');
-  if (!history) return;
-
-  // Remove welcome empty state if present
-  const welcome = history.querySelector('.empty-state');
-  if (welcome) welcome.remove();
-
-  const msgId   = `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const isUser  = role === 'user';
-
-  const sourcesHtml = (!isUser && trace?.length) ? `
-    <div class="chat-sources">
-      <div class="chat-sources-label">MCP Tools Executed</div>
-      ${trace.map(t => `<span class="chat-source-tag">🔧 ${escHtml(t.tool ?? t.tool_name ?? t.name ?? '')}</span>`).join('')}
-    </div>` : '';
-
-  const extSources = (!isUser && metaData?.sources?.length)
-    ? `<div class="chat-sources"><div class="chat-sources-label">Verified Sources</div>${metaData.sources.filter(s => s.url).slice(0, 6).map(s => `<a class="chat-source-tag" href="${escHtml(s.url)}" target="_blank" rel="noopener">🔗 ${escHtml(s.id || s.source_system || s.type)}</a>`).join('')}</div>`
-    : '';
-
-  const modelInfo = (!isUser && metaData?.model_used)
-    ? ` · ${escHtml(metaData.model_used)}${metaData.total_duration_ms ? ` · ${formatDuration(metaData.total_duration_ms)}` : ''}`
-    : '';
-
-  const html = `
-    <div class="chat-message ${isUser ? 'user' : 'agent'}" id="${msgId}">
-      <div class="chat-bubble">
-        ${renderMarkdownLite(content)}
-        ${sourcesHtml}
-        ${extSources}
-      </div>
-      <div class="chat-meta">${isUser ? 'You' : '🤖 Copilot'} · ${timeStr}${modelInfo}</div>
-    </div>`;
-
-  history.insertAdjacentHTML('beforeend', html);
-  scrollChatToBottom();
-  return msgId;
-}
-
-function renderThinkingBubble() {
-  const history = document.getElementById('chat-history');
-  if (!history) return null;
-  const id = `thinking-${Date.now()}`;
-  history.insertAdjacentHTML('beforeend', `
-    <div class="chat-message agent" id="${id}">
-      <div class="chat-bubble">
-        <span class="text-muted">
-          <span class="loading-spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></span>
-          Thinking…
-        </span>
-      </div>
-    </div>`);
-  scrollChatToBottom();
-  return id;
-}
-
-function removeThinkingBubble(id) {
-  if (id) document.getElementById(id)?.remove();
-}
-
-function scrollChatToBottom() {
-  const h = document.getElementById('chat-history');
-  if (h) h.scrollTop = h.scrollHeight;
-}
-
-/** Minimal markdown-lite renderer for chat bubbles */
-function renderMarkdownLite(text) {
-  if (!text) return '';
-  let s = escHtml(text);
-  // Code blocks
-  s = s.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, c) => `<pre><code>${c}</code></pre>`);
-  // Inline code
-  s = s.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
-  // Bold
-  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // Italic
-  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  // Bullet lists
-  s = s.replace(/^- (.+)$/gm, '<li>$1</li>').replace(/((<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-  // Numbered lists
-  s = s.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-  // Newlines
-  s = s.replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>');
-  return `<p>${s}</p>`;
-}
-
-// ═══════════════════════════════════════════════════════════
-// Render: History
-// ═══════════════════════════════════════════════════════════
-
-function renderHistory(records) {
-  const container = document.getElementById('history-container');
-  if (!container) return;
-
-  if (!records?.length) {
-    container.innerHTML = emptyState('📜', 'No scan history', 'Run your first repository scan to populate the history.');
-    return;
-  }
-
-  const rows = records.map((r, i) => {
-    const repo    = r.owner && r.repo ? `${r.owner}/${r.repo}` : (r.repository ?? r.repo ?? '—');
-    const vulns   = r.vulnerability_count ?? r.vuln_count ?? r.vulnerabilities?.length ?? '—';
-    const when    = r.scanned_at ?? r.timestamp ?? r.created_at ?? null;
-    const status  = r.status ?? 'completed';
-    const critical = r.critical ?? countSeverity(r.vulnerabilities ?? [], 'CRITICAL');
-    return `
-      <tr data-idx="${i}" title="Click to view details">
-        <td class="cell-package">${escHtml(repo)}</td>
-        <td>${when ? formatDate(when) : '—'}</td>
-        <td>${escHtml(String(vulns))}</td>
-        <td>${critical > 0 ? `<span class="text-critical">⬤ ${critical}</span>` : '<span class="text-low">✓ 0</span>'}</td>
-        <td><span class="tag">${escHtml(status)}</span></td>
-      </tr>`;
-  }).join('');
-
-  container.innerHTML = `
-    <div class="table-wrapper">
-      <table class="history-table">
-        <thead>
-          <tr>
-            <th>Repository</th>
-            <th>Scanned At</th>
-            <th>Vulnerabilities</th>
-            <th>Critical</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-
-  // Click-to-view
-  container.querySelectorAll('tbody tr').forEach(tr => {
-    tr.addEventListener('click', async () => {
-      const idx = parseInt(tr.dataset.idx, 10);
-      const rec = records[idx];
-      if (!rec) return;
-      try {
-        const full = rec.id ? await apiFetch(`/api/history/${rec.id}`) : rec;
-        state.currentScan = full;
-        state.scanResults = full;
-        state.currentRepo = { owner: full.owner ?? '', repo: full.repo ?? '' };
-        state.chatContext = { owner: full.owner ?? '', repo: full.repo ?? '' };
-        renderScanResults(full);
-        renderGithubCorrelation(full);
-        showSection('scan');
-        showBanner(`Loaded persisted scan for ${state.currentRepo.owner}/${state.currentRepo.repo}`, 'info');
-      } catch (err) {
-        showError(err.message);
-      }
-    });
-  });
-}
-
-function renderHistoryError(msg) {
-  const c = document.getElementById('history-container');
-  if (c) c.innerHTML = emptyState('⚠️', 'Failed to load history', msg);
-}
-
-// ═══════════════════════════════════════════════════════════
-// Render: Live State (header pills)
-// ═══════════════════════════════════════════════════════════
-
-function renderLiveState(data) {
-  const services = {
-    'github-service': 'GitHub Service',
-    'osv-service':    'OSV Service',
-    'github-mcp':     'GitHub MCP',
-    'osv-mcp':        'OSV MCP',
-    'groq':           'Groq',
-    'gemini':         'Gemini',
-  };
-
-  for (const [key, label] of Object.entries(services)) {
-    const el = document.getElementById(`pill-${key}`);
-    if (!el) continue;
-
-    const svcData = data?.services?.[key] ?? data?.[key] ?? null;
-    const status  = svcData?.status ?? (data ? 'unknown' : 'unknown');
-
-    el.className = 'status-pill';
-    if (status === 'ok' || status === 'connected' || status === 'healthy' || status === true) {
-      el.classList.add('ok');
-    } else if (status === 'warn' || status === 'degraded') {
-      el.classList.add('warn');
-    } else if (status === 'error' || status === 'disconnected' || status === false) {
-      el.classList.add('err');
-    } else {
-      el.classList.add('unk');
-    }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════
-// Render: Execution Trace
-// ═══════════════════════════════════════════════════════════
-
-function renderTraceFromScan(data) {
-  const trace = data?.trace ?? data?.execution_trace ?? [];
-  if (trace.length) appendTraceItems(trace);
-}
-
-function appendTraceItems(traceItems) {
-  const container = document.getElementById('trace-list');
-  if (!container) return;
-
-  // Remove empty state
-  container.querySelector('.empty-state')?.remove();
-
-  const offset = container.querySelectorAll('.trace-item').length;
-
-  traceItems.forEach((t, i) => {
-    const el    = document.createElement('div');
-    el.className = 'trace-item';
-    const step   = offset + i + 1;
-    const dur    = t.duration_ms != null ? formatDuration(t.duration_ms) : (t.duration ?? '');
-    const tool   = t.tool ?? t.tool_name ?? t.name ?? 'unknown';
-    const server = t.server ?? t.server_name ?? t.mcp_server ?? '';
-    const ok     = t.success !== false && t.error == null;
-    const args   = t.args ?? t.input ?? t.arguments ?? null;
-
-    el.innerHTML = `
-      <div class="trace-step">${step}</div>
-      <div class="trace-body">
-        <div class="trace-header-row">
-          <span class="trace-tool-name">${escHtml(tool)}</span>
-          ${server ? `<span class="trace-server-tag">${escHtml(server)}</span>` : ''}
-          <span class="trace-status-${ok ? 'ok' : 'err'}">${ok ? '✓' : '✕'}</span>
-          ${dur ? `<span class="trace-duration">${escHtml(dur)}</span>` : ''}
-        </div>
-        ${args ? `<div class="trace-args">${escHtml(typeof args === 'object' ? JSON.stringify(args, null, 2) : String(args))}</div>` : ''}
-      </div>`;
-
-    container.appendChild(el);
-  });
-}
-
-// ═══════════════════════════════════════════════════════════
-// Navigation
-// ═══════════════════════════════════════════════════════════
-
-function showSection(sectionId) {
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-
-  const section = document.getElementById(`section-${sectionId}`);
-  if (section) section.classList.add('active');
-
-  const navItem = document.querySelector(`[data-section="${sectionId}"]`);
-  if (navItem) navItem.classList.add('active');
-
-  // Mobile: close sidebar
-  document.getElementById('sidebar')?.classList.remove('mobile-open');
-  document.getElementById('sidebar-overlay')?.classList.remove('active');
-}
-
-// ═══════════════════════════════════════════════════════════
-// UI helpers
-// ═══════════════════════════════════════════════════════════
-
-function showError(message) {
-  showBanner(message, 'error');
-}
-
-function showLoading(show) {
-  const overlay = document.getElementById('global-loading');
-  if (!overlay) return;
-  overlay.style.display = show ? 'flex' : 'none';
-}
-
-function showBanner(msg, type = 'info') {
+function showAlert(message, type = 'info') {
   const container = document.getElementById('alert-container');
   if (!container) return;
 
-  const icons = { info: 'ℹ️', warn: '⚠️', error: '🚨', success: '✅' };
-  const id = `banner-${Date.now()}`;
+  const alert = document.createElement('div');
+  alert.className = `alert-toast ${type}`;
+  alert.innerHTML = `
+    <span>${escapeHtml(message)}</span>
+    <button class="alert-close-btn">&times;</button>
+  `;
+  alert.querySelector('.alert-close-btn').onclick = () => alert.remove();
 
-  const el = document.createElement('div');
-  el.className = `alert-banner ${type}`;
-  el.id = id;
-  el.innerHTML = `
-    <span class="alert-icon">${icons[type] ?? 'ℹ️'}</span>
-    <span class="alert-text">${escHtml(msg)}</span>
-    <span class="alert-close" onclick="document.getElementById('${id}')?.remove()">✕</span>`;
-
-  container.appendChild(el);
-
-  // Click anywhere to dismiss
-  el.addEventListener('click', () => el.remove());
-
-  // Auto-dismiss after 8 s
-  setTimeout(() => {
-    el.style.opacity = '0';
-    el.style.transition = 'opacity 0.3s';
-    setTimeout(() => el.remove(), 350);
-  }, 8_000);
+  container.appendChild(alert);
+  setTimeout(() => alert.remove(), 6000);
 }
 
-function formatDuration(ms) {
-  if (ms == null) return '';
-  if (ms < 1000)  return `${ms}ms`;
-  if (ms < 60_000) return `${(ms/1000).toFixed(1)}s`;
-  return `${Math.floor(ms/60_000)}m ${Math.round((ms%60_000)/1000)}s`;
+function showLoading(show, text = 'Processing...') {
+  const overlay = document.getElementById('global-loading');
+  const label = document.getElementById('global-loading-text');
+  if (label) label.textContent = text;
+  if (overlay) overlay.style.display = show ? 'flex' : 'none';
 }
 
-function formatDate(iso) {
-  if (!iso) return '—';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-  } catch { return String(iso); }
-}
-
-function severityBadge(label) {
-  const s = (label ?? 'UNKNOWN').toUpperCase();
-  const cls = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'medium', LOW: 'low' }[s] ?? 'unknown';
-  return `<span class="severity-badge ${cls}">${escHtml(s)}</span>`;
-}
-
-function emptyState(icon, title, desc = '') {
-  return `
-    <div class="empty-state">
-      <div class="empty-state-icon">${icon}</div>
-      <div class="empty-state-title">${escHtml(title)}</div>
-      ${desc ? `<div class="empty-state-desc">${escHtml(desc)}</div>` : ''}
-    </div>`;
-}
-
-function escHtml(str) {
-  return String(str ?? '')
+function escapeHtml(str) {
+  if (typeof str !== 'string') return String(str ?? '');
+  return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+    .replace(/'/g, '&#039;');
 }
-
-function clearScanUI() {
-  const header = document.getElementById('scan-result-header');
-  if (header) header.classList.add('hidden');
-
-  const grid = document.getElementById('stat-grid-overview');
-  if (grid) grid.innerHTML = '';
-
-  ['vuln-table-scan', 'vuln-table-vulns'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = '';
-  });
-
-  const ghCards = document.getElementById('github-cards');
-  if (ghCards) ghCards.innerHTML = '';
-}
-
-function setProgressStep(stepId, state_) {
-  const el = document.getElementById(stepId);
-  if (!el) return;
-  el.className = `progress-step ${state_}`;
-  const icon = el.querySelector('.progress-step-icon');
-  if (!icon) return;
-  if (state_ === 'done')   icon.textContent = '✓';
-  else if (state_ === 'active') icon.textContent = '⟳';
-  else if (state_ === 'error')  icon.textContent = '✕';
-  else icon.textContent = '○';
-}
-
-function updateNavBadge(navId, count) {
-  const item = document.getElementById(navId);
-  if (!item) return;
-  let badge = item.querySelector('.nav-badge');
-  if (count == null || count === 0) {
-    badge?.remove();
-    item.dataset.count = '0';
-    return;
-  }
-  if (!badge) {
-    badge = document.createElement('span');
-    badge.className = 'nav-badge';
-    item.appendChild(badge);
-  }
-  badge.textContent = count > 99 ? '99+' : String(count);
-  item.dataset.count = String(count);
-}
-
-// ═══════════════════════════════════════════════════════════
-// Event listeners
-// ═══════════════════════════════════════════════════════════
-
-function setupEventListeners() {
-  // ── Repo scan form
-  const scanForm = document.getElementById('scan-form');
-  scanForm?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const input = document.getElementById('repo-input');
-    const val   = (input?.value ?? '').trim();
-    if (!val) { showBanner('Please enter a repository (e.g. psf/requests)', 'warn'); return; }
-
-    const parts = val.replace('https://github.com/', '').split('/').filter(Boolean);
-    if (parts.length < 2) { showBanner('Format must be owner/repository', 'warn'); return; }
-
-    const [owner, repo] = parts;
-    await scanRepo(owner, repo);
-  });
-
-  // ── Chat form
-  const chatForm = document.getElementById('chat-form');
-  chatForm?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const input = document.getElementById('chat-input');
-    const msg   = (input?.value ?? '').trim();
-    if (!msg) return;
-    input.value = '';
-    input.style.height = '';
-    const ctx = state.chatContext ?? {};
-    await sendChatMessage(msg, ctx.owner ?? null, ctx.repo ?? null);
-  });
-
-  // Auto-resize chat textarea
-  const chatInput = document.getElementById('chat-input');
-  chatInput?.addEventListener('input', () => {
-    chatInput.style.height = '';
-    chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
-  });
-  chatInput?.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      document.getElementById('chat-form')?.requestSubmit();
-    }
-  });
-
-  // ── Refresh MCP button
-  document.getElementById('btn-refresh-tools')?.addEventListener('click', refreshMCPTools);
-
-  // ── Commit Security Lookup form
-  const commitForm = document.getElementById('commit-form');
-  commitForm?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const repoVal = (document.getElementById('commit-repo-input')?.value ?? '').trim();
-    const shaVal  = (document.getElementById('commit-sha-input')?.value ?? '').trim();
-    let owner = null, repo = null;
-    if (repoVal) {
-      const parts = repoVal.replace('https://github.com/', '').split('/').filter(Boolean);
-      if (parts.length >= 2) {
-        owner = parts[0];
-        repo  = parts[1];
-      } else {
-        showBanner('Repository context must be owner/repository', 'warn');
-        return;
-      }
-    }
-    if (!shaVal && (!owner || !repo)) {
-      showBanner('Enter either owner/repository or a full 40/64-char commit SHA', 'warn');
-      return;
-    }
-    await checkCommit(owner, repo, shaVal || null);
-  });
-
-  // ── Sidebar nav
-  document.querySelectorAll('.nav-item[data-section]').forEach(item => {
-    item.addEventListener('click', () => showSection(item.dataset.section));
-  });
-
-  // ── Mobile menu
-  document.getElementById('mobile-menu-btn')?.addEventListener('click', () => {
-    document.getElementById('sidebar')?.classList.toggle('mobile-open');
-    document.getElementById('sidebar-overlay')?.classList.toggle('active');
-  });
-
-  document.getElementById('sidebar-overlay')?.addEventListener('click', () => {
-    document.getElementById('sidebar')?.classList.remove('mobile-open');
-    document.getElementById('sidebar-overlay')?.classList.remove('active');
-  });
-
-  // ── Vuln table sortable headers (delegated)
-  document.addEventListener('click', e => {
-    const th = e.target.closest('th.sortable');
-    if (!th) return;
-    const table = th.closest('table');
-    if (!table) return;
-
-    const col      = th.dataset.col;
-    const isAsc    = th.classList.contains('sort-asc');
-    const newDir   = isAsc ? 'desc' : 'asc';
-
-    table.querySelectorAll('th.sortable').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
-    th.classList.add(newDir === 'asc' ? 'sort-asc' : 'sort-desc');
-
-    const tbody = table.querySelector('tbody');
-    if (!tbody) return;
-    const rows  = Array.from(tbody.querySelectorAll('tr'));
-    const colIdx = Array.from(th.parentElement.children).indexOf(th);
-
-    rows.sort((a, b) => {
-      const av = a.children[colIdx]?.textContent.trim() ?? '';
-      const bv = b.children[colIdx]?.textContent.trim() ?? '';
-      return newDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-    });
-
-    rows.forEach(r => tbody.appendChild(r));
-  });
-
-  // ── Keyboard shortcut: Ctrl+K → focus repo input
-  document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-      e.preventDefault();
-      showSection('scan');
-      document.getElementById('repo-input')?.focus();
-    }
-  });
-}
-
-/** POST /api/commit-check – check latest or exact commit SHA against OSV via MCP */
-async function checkCommit(owner, repo, commit) {
-  const container = document.getElementById('commit-result-container');
-  const btn = document.getElementById('btn-check-commit');
-  if (btn) { btn.disabled = true; btn.textContent = '⟳ Checking…'; }
-  if (container) {
-    container.innerHTML = `<div class="inline-loader" style="padding:24px;"><div class="loading-spinner"></div>Querying GitHub & OSV MCP servers…</div>`;
-  }
-
-  try {
-    const payload = {};
-    if (owner) payload.owner = owner;
-    if (repo) payload.repo = repo;
-    if (commit) payload.commit = commit;
-
-    const data = await apiFetch('/api/commit-check', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-
-    const trace = data.execution_trace ?? data.trace ?? [];
-    if (trace.length) {
-      appendTraceItems(trace);
-      updateNavBadge('nav-trace', (parseInt(document.getElementById('nav-trace')?.dataset.count ?? '0', 10) + trace.length) || null);
-    }
-
-    renderCommitResult(data);
-  } catch (err) {
-    if (container) {
-      container.innerHTML = emptyState('⚠️', 'Commit lookup failed', err.message);
-    }
-    showError(err.message);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🔎 Check Commit'; }
-  }
-}
-
-function renderCommitResult(data) {
-  const container = document.getElementById('commit-result-container');
-  if (!container) return;
-
-  const vulns = data.vulnerabilities ?? [];
-  const commitUrl = data.commit_url
-    ? `<a href="${escHtml(data.commit_url)}" target="_blank" rel="noopener"><code>${escHtml(data.commit_hash)}</code> ↗</a>`
-    : `<code>${escHtml(data.commit_hash)}</code>`;
-
-  const metaHtml = `
-    <div style="padding:12px 16px;border-bottom:1px solid var(--border-muted);display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
-      <div><strong>Commit:</strong> ${commitUrl}</div>
-      ${data.commit_message ? `<div><strong>Message:</strong> ${escHtml(data.commit_message)}</div>` : ''}
-      ${data.author ? `<div><strong>Author:</strong> ${escHtml(data.author)}</div>` : ''}
-      <span class="tag">${data.vulnerability_count ?? vulns.length} OSV match(es)</span>
-      <span class="tag">${escHtml(data.data_freshness || 'live')}</span>
-      <a class="tag" href="${escHtml(data.source_url)}" target="_blank" rel="noopener">OSV API ↗</a>
-    </div>`;
-
-  if (!vulns.length) {
-    container.innerHTML = metaHtml + emptyState(
-      '🛡️',
-      'No OSV vulnerability records associated with this commit',
-      data.note || 'OSV returned zero matching records. This does not establish that the repository is secure or replace dependency-version scanning.'
-    );
-    return;
-  }
-
-  const rows = vulns.map(v => {
-    const fixed = (v.fixed_versions ?? []).join(', ') || '—';
-    const pkgs  = (v.affected_packages ?? []).join(', ') || '—';
-    const refs  = (v.references ?? []).slice(0, 2).map(r => `<a href="${escHtml(r.url)}" target="_blank" rel="noopener">${escHtml(r.type || 'Ref')} ↗</a>`).join(' ');
-    return `
-      <tr>
-        <td class="cell-package">${escHtml(pkgs)}</td>
-        <td class="cell-id"><a href="${escHtml(v.osv_url || buildVulnLink({ id: v.vulnerability_id }))}" target="_blank" rel="noopener">${escHtml(v.vulnerability_id)}</a></td>
-        <td>${severityBadge(v.severity_label || 'UNSPECIFIED')}</td>
-        <td>${escHtml(v.summary || '—')}</td>
-        <td class="cell-fixed">${escHtml(fixed)}</td>
-        <td>${refs || '—'}</td>
-      </tr>`;
-  }).join('');
-
-  container.innerHTML = metaHtml + `
-    <div class="table-wrapper">
-      <table class="vuln-table">
-        <thead>
-          <tr>
-            <th>Affected Package(s)</th>
-            <th>Vulnerability ID</th>
-            <th>Severity</th>
-            <th>Summary</th>
-            <th>Fixed Versions</th>
-            <th>References</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-}
-
-// ═══════════════════════════════════════════════════════════
-// Bootstrap
-// ═══════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', init);

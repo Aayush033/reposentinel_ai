@@ -249,13 +249,37 @@ async def run_agent(
                                     )
                                 )
 
-            tool_result_content = json.dumps(
-                call_result.get("result", call_result), default=str
-            )
-            if len(tool_result_content) > 14000:
-                tool_result_content = (
-                    tool_result_content[:14000] + "\n...(truncated for context)"
-                )
+            raw_res = call_result.get("result", call_result)
+            tool_result_content = json.dumps(raw_res, default=str)
+            if len(tool_result_content) > 3500:
+                if isinstance(raw_res, dict):
+                    compact_dict = dict(raw_res)
+                    if "results" in compact_dict and isinstance(
+                        compact_dict["results"], list
+                    ):
+                        total_r = len(compact_dict["results"])
+                        compact_dict["results"] = compact_dict["results"][:10]
+                        compact_dict["_notice"] = (
+                            f"Showing top 10 of {total_r} items to respect LLM rate limits."
+                        )
+                    elif "dependencies" in compact_dict and isinstance(
+                        compact_dict["dependencies"], list
+                    ):
+                        total_d = len(compact_dict["dependencies"])
+                        compact_dict["dependencies"] = compact_dict["dependencies"][:15]
+                        compact_dict["_notice"] = (
+                            f"Showing first 15 of {total_d} dependencies."
+                        )
+                    elif "commits" in compact_dict and isinstance(
+                        compact_dict["commits"], list
+                    ):
+                        compact_dict["commits"] = compact_dict["commits"][:5]
+                    tool_result_content = json.dumps(compact_dict, default=str)
+                if len(tool_result_content) > 3500:
+                    tool_result_content = (
+                        tool_result_content[:3500]
+                        + "\n...(truncated to respect rate limits)"
+                    )
 
             messages.append(
                 {
